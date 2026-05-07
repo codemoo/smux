@@ -69,6 +69,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
 
   try {
     for (;;) {
+      context.state = reconcile(context.state);
       const allSessions = sortRecent(activeSessions(context.state));
       const sessions = visibleSessions(allSessions, view, filter);
       selectedIndex = Math.min(Math.max(selectedIndex, 0), Math.max(0, sessions.length - 1));
@@ -85,8 +86,8 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
       }));
       message = undefined;
 
-      const input = await readInput();
-      if (input.type === "resize") {
+      const input = await readInput(1_000);
+      if (input.type !== "key") {
         continue;
       }
       const key = input.key;
