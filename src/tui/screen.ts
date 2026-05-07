@@ -16,9 +16,6 @@ export type ScreenInput =
     }
   | {
       type: "resize";
-    }
-  | {
-      type: "timeout";
     };
 
 function setRawMode(enabled: boolean): void {
@@ -72,18 +69,12 @@ export class FullScreen {
   }
 }
 
-export function readInput(timeoutMs?: number): Promise<ScreenInput> {
+export function readInput(): Promise<ScreenInput> {
   emitKeypressEvents(stdin);
   setRawMode(true);
   stdin.resume();
 
   return new Promise((resolve) => {
-    const timer = timeoutMs
-      ? setTimeout(() => {
-          cleanup();
-          resolve({ type: "timeout" });
-        }, timeoutMs)
-      : undefined;
     const handler = (_value: string, key: KeyInput) => {
       cleanup();
       resolve({ type: "key", key });
@@ -93,9 +84,6 @@ export function readInput(timeoutMs?: number): Promise<ScreenInput> {
       resolve({ type: "resize" });
     };
     const cleanup = () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
       stdin.off("keypress", handler);
       stdout.off("resize", resizeHandler);
     };

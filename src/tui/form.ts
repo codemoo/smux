@@ -204,7 +204,7 @@ export async function runNewSessionForm(
     }));
 
     const input = await readInput();
-    if (input.type !== "key") {
+    if (input.type === "resize") {
       continue;
     }
 

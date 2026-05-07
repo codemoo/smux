@@ -19,11 +19,9 @@ The first implementation target is local-only:
 - sync rename changes between `smux` and `tmux`
 - track each agent session's objective, tags, git branch, and lightweight status
 - inspect an agent session without attaching
-- stream a live preview in the dashboard focus panel
-- edit a session name and send agent prompts from the focus panel
-- show best-effort Claude/Codex token totals when local logs are available
+- send a short confirmed message to an agent session from outside tmux
 - set tmux scrollback/mouse defaults globally or per session
-- show `detach C-b d -> smux dashboard` in the tmux statusline while attached
+- show `detach: C-b d` in the tmux statusline while attached
 
 The first version is intentionally local-only. Remote tmux hosts come later.
 
@@ -72,18 +70,15 @@ Dashboard keys:
 
 ```text
 j/k or arrows  move selection
-right arrow     enter focus panel
-left/esc        return from focus panel
-up/down         move between focus fields
-pgup/pgdn       scroll preview while preview is focused
 enter          attach selected session
 n              new session
 /              filter sessions
 ?              key help
 r/p/a/w        recent/path/agent/waiting views
 s              status panel
+m              send message
 x              kill session
 q              quit
 ```
 
-The dashboard uses a statusline, view tabs, a selectable session panel, and a live focus panel for the currently selected session. When you detach from tmux with `C-b d`, control returns to the dashboard instead of exiting `smux`. It expands to the current terminal size and redraws when the terminal is resized. This is the primary interface; subcommands remain available for scripting.
+The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. It expands to the current terminal size and redraws when the terminal is resized. This is the primary interface; subcommands remain available for scripting.
