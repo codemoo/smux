@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { attachCommand } from "../commands/attach.js";
 import { killCommand } from "../commands/kill.js";
 import { newCommand } from "../commands/new.js";
@@ -6,17 +5,11 @@ import { sendCommandToSession } from "../commands/send.js";
 import { activeSessions } from "../core/resolve.js";
 import { formatDashboard, formatDashboardHelp, formatStatus, sortRecent } from "../core/format.js";
 import type { CommandContext } from "../commands/context.js";
-import type { ListView, SessionKind, SmuxSession } from "../core/types.js";
+import type { ListView, SmuxSession } from "../core/types.js";
 import { ask, confirm } from "./prompt.js";
 import { FullScreen, readInput } from "./screen.js";
 import { style } from "../core/theme.js";
-
-function parseKind(value: string): SessionKind {
-  if (value === "claude" || value === "codex" || value === "shell") {
-    return value;
-  }
-  throw new Error(`Invalid kind "${value}". Use claude, codex, or shell.`);
-}
+import { runNewSessionForm } from "./form.js";
 
 function matchesFilter(session: SmuxSession, filter: string): boolean {
   if (!filter) {
@@ -43,28 +36,6 @@ function visibleSessions(sessions: SmuxSession[], view: ListView, filter: string
       ? sessions.filter((session) => session.agentStatus === "waiting" || session.agentStatus === "blocked")
       : sessions;
   return sortRecent(scoped).filter((session) => matchesFilter(session, filter));
-}
-
-async function createSessionFlow(context: CommandContext): Promise<void> {
-  const cwd = process.cwd();
-  const name = await ask("Session name", basename(cwd));
-  const objective = await ask("Objective");
-  const kind = parseKind(await ask("Kind: claude, codex, shell", "codex"));
-  const tags = (await ask("Tags, comma separated"))
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-  const sendObjective =
-    kind !== "shell" && objective ? await confirm("Send objective as the first agent prompt?", true) : false;
-
-  await newCommand(context, {
-    name,
-    objective,
-    kind,
-    tags,
-    cwd,
-    sendObjective
-  });
 }
 
 async function showOverlay(screen: FullScreen, render: () => string): Promise<void> {
@@ -169,8 +140,16 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         continue;
       }
       if (sequence === "n") {
+        const result = await runNewSessionForm(screen, context);
+        if (!result) {
+          message = "New session cancelled.";
+          continue;
+        }
         screen.stop();
-        await createSessionFlow(context);
+        await newCommand(context, {
+          ...result,
+          cwd: process.cwd()
+        });
         return;
       }
 

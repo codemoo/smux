@@ -20,6 +20,15 @@ import {
 } from "./theme.js";
 import { gitLabel, kindLabel, statusLabel } from "./ui.js";
 
+interface NewSessionFormState {
+  step: number;
+  name: string;
+  objective: string;
+  kind: "claude" | "codex" | "shell";
+  tags: string;
+  sendObjective: boolean;
+}
+
 function shortenPath(path: string): string {
   const home = homedir();
   if (path === home) {
@@ -531,6 +540,72 @@ export function formatDashboardHelp(): string {
     `${key("x")} kill selected session after confirmation`,
     `${key("esc")} clear filter   ${key("q")} quit`
   ]);
+}
+
+function inputLine(label: string, value: string, active: boolean, hint?: string): string {
+  const marker = active ? style.cyan("›") : " ";
+  const renderedValue = active ? style.inverse(` ${value || " "} `) : style.bold(value || style.gray("-"));
+  const suffix = hint ? ` ${style.dim(hint)}` : "";
+  return `${marker} ${padEndVisible(label, 18)} ${renderedValue}${suffix}`;
+}
+
+function segmentedKind(value: "claude" | "codex" | "shell", active: boolean): string {
+  const item = (kind: "claude" | "codex" | "shell", hotkey: string) => {
+    const body = `${hotkey} ${kind}`;
+    if (kind === value) {
+      return active ? style.inverse(` ${body} `) : style.cyan(`[${body}]`);
+    }
+    return style.gray(` ${body} `);
+  };
+  return [item("codex", "c"), item("claude", "l"), item("shell", "s")].join(" ");
+}
+
+export function formatNewSessionForm(options: {
+  state: NewSessionFormState;
+  cwd: string;
+  config: SmuxConfig;
+}): string {
+  const width = terminalWidth();
+  const height = terminalHeight();
+  const state = options.state;
+  const [header] = topBar({
+    width,
+    view: "recent",
+    sessions: [],
+    filter: "",
+    config: options.config
+  });
+  const formWidth = Math.min(width, Math.max(72, Math.floor(width * 0.72)));
+  const leftPad = Math.max(0, Math.floor((width - formWidth) / 2));
+  const spacer = " ".repeat(leftPad);
+  const kindLine = `${state.step === 2 ? style.cyan("›") : " "} ${padEndVisible("agent", 18)} ${segmentedKind(state.kind, state.step === 2)} ${style.dim("left/right or hotkey")}`;
+  const canSendObjective = state.kind !== "shell" && state.objective.trim().length > 0;
+  const sendValue = !canSendObjective
+    ? style.gray("disabled")
+    : state.sendObjective
+      ? style.green("send objective")
+      : style.gray("do not send");
+  const sendHint = canSendObjective ? "space toggles" : "requires agent objective";
+  const sendLine = `${state.step === 4 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
+  const body = [
+    style.bold("Create session"),
+    style.dim("Keep this flow in the dashboard. Esc cancels, Enter advances."),
+    "",
+    field("cwd", shortenPath(options.cwd)),
+    "",
+    inputLine("name", state.name, state.step === 0, "editable"),
+    inputLine("objective", state.objective, state.step === 1, "optional"),
+    kindLine,
+    inputLine("tags", state.tags, state.step === 3, "comma separated"),
+    sendLine,
+    "",
+    style.dim("Enter next/confirm  ·  Up/Down move  ·  Esc cancel")
+  ];
+  const boxHeight = Math.min(Math.max(14, height - 6), 24);
+  const rows = boxLines("new session", body, formWidth, boxHeight).map((line) => `${spacer}${line}`);
+  const footer = style.inverse(fillLine(" enter next/confirm   ↑/↓ move   ←/→ agent   space toggle   esc cancel", width));
+
+  return [header, "", "", ...rows, "", footer].join("\n");
 }
 
 export function formatStatus(session: SmuxSession): string {
