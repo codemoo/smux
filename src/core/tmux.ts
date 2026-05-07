@@ -90,6 +90,24 @@ function setTmuxOption(args: string[]): void {
   run("tmux", args);
 }
 
+function applyStatusLine(targetArgs: string[]): void {
+  setTmuxOption(["set-option", ...targetArgs, "status", "on"]);
+  setTmuxOption(["set-option", ...targetArgs, "status-left-length", "80"]);
+  setTmuxOption(["set-option", ...targetArgs, "status-right-length", "160"]);
+  setTmuxOption([
+    "set-option",
+    ...targetArgs,
+    "status-left",
+    "#[bg=green,fg=black,bold] smux #[default] #[fg=green,bold]#S #[default]"
+  ]);
+  setTmuxOption([
+    "set-option",
+    ...targetArgs,
+    "status-right",
+    "#[fg=green,bold]detach: C-b d#[default] #[fg=colour240]|#[default] #[fg=colour244]#{pane_current_path} #[fg=colour240]|#[default] %H:%M "
+  ]);
+}
+
 export function applyTmuxOptions(target: string | undefined, options: Required<TmuxOptions>): void {
   const targetArgs = target ? ["-t", target] : ["-g"];
   const history = String(options.historyLimit);
@@ -98,6 +116,7 @@ export function applyTmuxOptions(target: string | undefined, options: Required<T
   setTmuxOption(["set-option", ...targetArgs, "mouse", mouse]);
   setTmuxOption(["set-window-option", ...targetArgs, "history-limit", history]);
   setTmuxOption(["set-window-option", ...targetArgs, "mode-keys", options.modeKeys]);
+  applyStatusLine(targetArgs);
 }
 
 export function capturePreview(target: string, lines = 30): string {

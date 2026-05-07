@@ -21,6 +21,7 @@ The first implementation target is local-only:
 - inspect an agent session without attaching
 - send a short confirmed message to an agent session from outside tmux
 - set tmux scrollback/mouse defaults globally or per session
+- show `detach: C-b d` in the tmux statusline while attached
 
 The first version is intentionally local-only. Remote tmux hosts come later.
 
