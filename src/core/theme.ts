@@ -12,6 +12,7 @@ function code(open: number, close: number): (value: string) => string {
 export const style = {
   bold: code(1, 22),
   dim: code(2, 22),
+  black: code(30, 39),
   cyan: code(36, 39),
   green: code(32, 39),
   yellow: code(33, 39),
@@ -20,6 +21,12 @@ export const style = {
   red: code(31, 39),
   gray: code(90, 39),
   white: code(37, 39),
+  bgCyan: code(46, 49),
+  bgGreen: code(42, 49),
+  bgYellow: code(43, 49),
+  bgMagenta: code(45, 49),
+  bgBlue: code(44, 49),
+  bgRed: code(41, 49),
   inverse: code(7, 27)
 };
 
@@ -65,9 +72,21 @@ export function key(value: string): string {
   return style.inverse(` ${value} `);
 }
 
+export function solid(value: string, tone: "cyan" | "green" | "yellow" | "magenta" | "blue" | "red" = "cyan"): string {
+  const background = {
+    cyan: style.bgCyan,
+    green: style.bgGreen,
+    yellow: style.bgYellow,
+    magenta: style.bgMagenta,
+    blue: style.bgBlue,
+    red: style.bgRed
+  }[tone];
+  return background(style.black(` ${value} `));
+}
+
 export function pill(value: string, tone: "cyan" | "green" | "yellow" | "red" | "gray" = "gray"): string {
   const color = style[tone];
-  return color(`[${value}]`);
+  return color(` ${value} `);
 }
 
 export function field(label: string, value: string): string {
@@ -90,8 +109,8 @@ export function boxLines(title: string, body: string[], width: number, height?: 
     : { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" };
 
   const titleText = ` ${truncate(title, Math.max(1, safeWidth - 6))} `;
-  const topRule = `${chars.tl}${titleText}${chars.h.repeat(Math.max(0, safeWidth - 2 - visibleLength(titleText)))}${chars.tr}`;
-  const bottomRule = `${chars.bl}${chars.h.repeat(safeWidth - 2)}${chars.br}`;
+  const topRule = `${style.gray(chars.tl)}${style.bold(titleText)}${style.gray(chars.h.repeat(Math.max(0, safeWidth - 2 - visibleLength(titleText))))}${style.gray(chars.tr)}`;
+  const bottomRule = style.gray(`${chars.bl}${chars.h.repeat(safeWidth - 2)}${chars.br}`);
   const rawRows = body.flatMap((line) => line.split("\n"));
   const contentHeight = height ? Math.max(0, height - 2) : rawRows.length;
   const visibleRows = rawRows.slice(0, contentHeight);
@@ -101,7 +120,7 @@ export function boxLines(title: string, body: string[], width: number, height?: 
 
   const rows = visibleRows.map((line) => {
     const clipped = truncate(line, innerWidth);
-    return `${chars.v} ${padEndVisible(clipped, innerWidth)} ${chars.v}`;
+    return `${style.gray(chars.v)} ${padEndVisible(clipped, innerWidth)} ${style.gray(chars.v)}`;
   });
 
   return [topRule, ...rows, bottomRule];

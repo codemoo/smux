@@ -11,14 +11,14 @@ import {
   padEndVisible,
   pill,
   sectionTitle,
+  solid,
   style,
-  stripAnsi,
   terminalHeight,
   terminalWidth,
   truncate,
   visibleLength
 } from "./theme.js";
-import { gitLabel, kindLabel, statusLabel } from "./ui.js";
+import { gitLabel, kindBadge, kindLabel, statusBadge, statusLabel } from "./ui.js";
 
 interface NewSessionFormState {
   step: number;
@@ -66,6 +66,20 @@ function timeLabel(value?: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function mutedLabel(label: string, value: string): string {
+  return `${style.gray(label)} ${value}`;
+}
+
+function alignBetween(left: string, right: string, width: number): string {
+  const rightWidth = visibleLength(right);
+  const leftWidth = Math.max(1, width - rightWidth - 1);
+  return `${padEndVisible(truncate(left, leftWidth), leftWidth)} ${right}`;
+}
+
+function divider(width: number): string {
+  return style.gray("─".repeat(Math.max(0, width)));
+}
+
 function tableWidths(): { name: number; cwd: number; git: number } {
   const width = terminalWidth();
   if (width < 86) {
@@ -89,7 +103,7 @@ export function sessionLine(session: SmuxSession, index?: number, selected = fal
   const widths = tableWidths();
   const marker = selected ? style.cyan("›") : " ";
   const prefix = index === undefined ? "" : `${marker} ${style.gray(String(index + 1).padStart(2))} `;
-  const kind = padEndVisible(kindLabel(session.kind), 7);
+  const kind = padEndVisible(kindLabel(session.kind), 9);
   const name = padEndVisible(style.bold(session.name), widths.name);
   const cwd = padEndVisible(style.dim(shortenPath(session.cwd)), widths.cwd);
   const status = padEndVisible(statusLabel(session.agentStatus), 8);
@@ -103,7 +117,7 @@ function listHeader(): string {
   const widths = tableWidths();
   return [
     "    ",
-    padEndVisible(style.gray("agent"), 7),
+    padEndVisible(style.gray("agent"), 9),
     padEndVisible(style.gray("session"), widths.name),
     padEndVisible(style.gray("cwd"), widths.cwd),
     padEndVisible(style.gray("state"), 8),
@@ -127,13 +141,12 @@ function emptyList(filter?: string): string {
 function emptyPanel(filter: string): string[] {
   return [
     "",
-    style.bold(filter ? "No matching sessions" : "No active tmux sessions"),
+    style.bold(filter ? "No matching sessions" : "No sessions are running"),
+    style.dim(filter ? "Try a shorter filter or clear it with Esc." : "Create an agent workspace from the current directory."),
     "",
-    `${key("n")} create a new session`,
-    `${key("/")} ${filter ? "adjust filter" : "filter sessions"}`,
-    `${key("?")} show keyboard help`,
+    `${key("n")} ${style.bold("new session")}   ${key("/")} ${filter ? "adjust filter" : "filter"}   ${key("?")} help`,
     "",
-    style.dim("smux new --kind codex --name work")
+    style.dim("smux new --kind codex --name work --resume")
   ];
 }
 
@@ -209,14 +222,14 @@ function counts(sessions: SmuxSession[], compact = false): string {
   const claude = sessions.filter((session) => session.kind === "claude").length;
   if (compact) {
     return [
-      pill(`${sessions.length}`, "cyan"),
+      solid(`${sessions.length}`, "cyan"),
       running ? pill(`${running} run`, "green") : undefined,
       waiting ? pill(`${waiting} wait`, "yellow") : undefined,
       blocked ? pill(`${blocked} block`, "red") : undefined
     ].filter(Boolean).join(" ");
   }
   return [
-    pill(`${sessions.length} active`, "cyan"),
+    solid(`${sessions.length} active`, "cyan"),
     pill(`${running} running`, "green"),
     pill(`${waiting} waiting`, waiting ? "yellow" : "gray"),
     pill(`${blocked} blocked`, blocked ? "red" : "gray"),
@@ -226,7 +239,7 @@ function counts(sessions: SmuxSession[], compact = false): string {
 }
 
 function tab(label: string, active: boolean): string {
-  return active ? style.inverse(` ${label} `) : style.gray(` ${label} `);
+  return active ? solid(label, "cyan") : style.gray(` ${label} `);
 }
 
 export function formatTabs(view: ListView, compact = false): string {
@@ -290,6 +303,13 @@ function statusDot(session: SmuxSession): string {
   return style.gray("●");
 }
 
+function startupBadge(session: SmuxSession): string {
+  if (session.kind === "shell") {
+    return style.gray("shell");
+  }
+  return session.resume ? style.cyan("resume") : style.gray("fresh");
+}
+
 function startupLabel(session: SmuxSession): string {
   if (session.kind === "shell") {
     return "shell";
@@ -324,19 +344,20 @@ function dashboardSessionRows(options: {
   for (const session of visible) {
     const globalIndex = options.sessions.indexOf(session);
     const selected = session.id === options.selected?.id;
-    const number = style.gray(String(globalIndex + 1).padStart(2));
-    const titleWidth = Math.max(12, options.width - 30);
-    const title = padEndVisible(style.bold(session.name), titleWidth);
-    const head = `${selected ? style.cyan("›") : " "} ${number} ${statusDot(session)} ${kindLabel(session.kind)} ${title} ${statusLabel(session.agentStatus)}`;
+    const rail = selected ? style.cyan("┃") : " ";
+    const number = selected ? solid(String(globalIndex + 1), "cyan") : style.gray(String(globalIndex + 1).padStart(2));
+    const headLeft = `${rail} ${number} ${statusDot(session)} ${kindBadge(session.kind, selected)} ${selected ? style.white(style.bold(session.name)) : style.bold(session.name)}`;
+    const head = alignBetween(headLeft, statusBadge(session.agentStatus), options.width);
     const metaParts = [
-      shortenPath(session.cwd),
-      session.resume ? "resume" : undefined,
-      session.gitBranch ? `${session.gitBranch}${session.gitDirty ? "*" : ""}` : undefined,
-      session.objective || undefined
+      mutedLabel("cwd", style.dim(shortenPath(session.cwd))),
+      startupBadge(session),
+      session.gitBranch ? mutedLabel("git", gitLabel(session.gitBranch, session.gitDirty)) : undefined,
+      session.objective ? mutedLabel("task", style.dim(session.objective)) : undefined
     ].filter(Boolean);
-    const meta = `    ${style.dim(truncate(metaParts.join(" · "), options.width - 6))}`;
-    rows.push(selected ? style.inverse(stripAnsi(fillLine(head, options.width))) : fillLine(head, options.width));
-    rows.push(selected ? style.bold(meta) : meta);
+    const branch = selected ? style.cyan("└") : style.gray("└");
+    const meta = `  ${branch} ${truncate(metaParts.join(style.gray("  ·  ")), options.width - 4)}`;
+    rows.push(fillLine(head, options.width));
+    rows.push(fillLine(selected ? style.bold(meta) : meta, options.width));
   }
 
   if (options.sessions.length > visible.length) {
@@ -373,11 +394,17 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     `history ${session.tmux?.historyLimit ?? "global"}`,
     `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`
   ].join(" · ");
+  const title = alignBetween(
+    `${kindBadge(session.kind)} ${statusBadge(session.agentStatus)} ${style.gray(session.status)}`,
+    startupBadge(session),
+    width
+  );
 
   return [
-    `${kindLabel(session.kind)} ${statusLabel(session.agentStatus)} ${style.gray(session.status)}`,
+    title,
+    divider(width),
     "",
-    field("cwd", shortenPath(session.cwd)),
+    field("cwd", style.white(shortenPath(session.cwd))),
     field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-")),
     field("startup", startupLabel(session)),
     field("scroll", scroll),
@@ -395,12 +422,12 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
 }
 
 function commandBar(width: number): string {
-  const left = " ↑/↓ move  enter attach  n new  / filter  ? help";
-  const right = "s status  m send  x kill  q quit ";
+  const left = `${key("↑/↓")} move  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter`;
+  const right = `${key("s")} status  ${key("m")} send  ${key("x")} kill  ${key("q")} quit`;
   if (visibleLength(left) + visibleLength(right) + 4 > width) {
-    return style.inverse(fillLine(" enter attach   n new   / filter   ? help   q quit", width));
+    return fillLine(`${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help  ${key("q")} quit`, width);
   }
-  return style.inverse(`${left}${" ".repeat(Math.max(1, width - visibleLength(left) - visibleLength(right)))}${right}`);
+  return fillLine(`${left}${" ".repeat(Math.max(1, width - visibleLength(left) - visibleLength(right)))}${right}`, width);
 }
 
 function topBar(options: {
@@ -411,8 +438,8 @@ function topBar(options: {
   config: SmuxConfig;
 }): string[] {
   const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const title = ` smux `;
   const compact = options.width < 72;
+  const brand = `${solid("◆ smux", "cyan")} ${style.bold("agent cockpit")}`;
   const meta = [
     "local",
     `${options.sessions.length} active`,
@@ -421,13 +448,13 @@ function topBar(options: {
     compact ? undefined : `scroll ${options.config.tmux.historyLimit.toLocaleString()}`,
     compact ? undefined : `mouse ${options.config.tmux.mouse ? "on" : "off"}`
   ].filter(Boolean).join("  ·  ");
-  const right = ` ${now} `;
-  const maxMetaWidth = Math.max(0, options.width - visibleLength(title) - visibleLength(right) - 2);
-  const line = `${title}${truncate(meta, maxMetaWidth)}`;
+  const right = style.gray(now);
+  const maxMetaWidth = Math.max(0, options.width - visibleLength(brand) - visibleLength(right) - 4);
+  const line = `${brand} ${style.dim(truncate(meta, maxMetaWidth))}`;
   const padding = Math.max(1, options.width - visibleLength(line) - visibleLength(right));
   return [
-    style.inverse(`${line}${" ".repeat(padding)}${right}`),
-    fillLine(`${formatTabs(options.view, compact)}  ${counts(options.sessions, compact)}`, options.width)
+    fillLine(`${line}${" ".repeat(padding)}${right}`, options.width),
+    alignBetween(formatTabs(options.view, compact), counts(options.sessions, compact), options.width)
   ];
 }
 
@@ -448,7 +475,7 @@ function formatDashboardWide(options: {
   const panelHeight = Math.max(4, height - fixedRows);
 
   const left = boxLines(
-    `sessions ${options.sessions.length}/${options.allSessions.length}`,
+    `${style.cyan("sessions")} ${options.sessions.length}/${options.allSessions.length}`,
     dashboardSessionRows({
       sessions: options.sessions,
       selected: options.selected,
@@ -460,7 +487,7 @@ function formatDashboardWide(options: {
     panelHeight
   );
   const right = boxLines(
-    options.selected ? `details ${options.selected.name}` : "details",
+    options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
     detailRows(options.selected, rightWidth - 4),
     rightWidth,
     panelHeight
@@ -512,7 +539,7 @@ function formatDashboardStacked(options: {
   const detailHeight = showDetails ? Math.max(3, remaining - listHeight) : 0;
 
   const list = boxLines(
-    `sessions ${options.sessions.length}/${options.allSessions.length}`,
+    `${style.cyan("sessions")} ${options.sessions.length}/${options.allSessions.length}`,
     dashboardSessionRows({
       sessions: options.sessions,
       selected: options.selected,
@@ -525,7 +552,7 @@ function formatDashboardStacked(options: {
   );
   const details = showDetails
     ? boxLines(
-        options.selected ? `details ${options.selected.name}` : "details",
+        options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
         detailRows(options.selected, width - 4),
         width,
         detailHeight
@@ -561,7 +588,7 @@ export function formatDashboard(options: {
 }
 
 export function formatDashboardHelp(): string {
-  return boxLines("keyboard", [
+  return boxLines(`${style.cyan("keyboard")} map`, [
     `${key("↑/↓")} or ${key("j/k")} move selection`,
     `${key("enter")} attach to selected tmux session`,
     `${key("n")} create a new session`,
@@ -575,17 +602,19 @@ export function formatDashboardHelp(): string {
 }
 
 function inputLine(label: string, value: string, active: boolean, hint?: string): string {
-  const marker = active ? style.cyan("›") : " ";
-  const renderedValue = active ? style.inverse(` ${value || " "} `) : style.bold(value || style.gray("-"));
+  const marker = active ? style.cyan("┃") : style.gray("│");
+  const renderedValue = active
+    ? solid(` ${value || " "} `, "cyan")
+    : style.bold(value || style.gray("-"));
   const suffix = hint ? ` ${style.dim(hint)}` : "";
-  return `${marker} ${padEndVisible(label, 18)} ${renderedValue}${suffix}`;
+  return `${marker} ${padEndVisible(active ? style.white(style.bold(label)) : style.gray(label), 18)} ${renderedValue}${suffix}`;
 }
 
 function segmentedKind(value: "claude" | "codex" | "shell", active: boolean): string {
   const item = (kind: "claude" | "codex" | "shell", hotkey: string) => {
     const body = `${hotkey} ${kind}`;
     if (kind === value) {
-      return active ? style.inverse(` ${body} `) : style.cyan(`[${body}]`);
+      return active ? solid(body, kind === "claude" ? "magenta" : kind === "codex" ? "cyan" : "blue") : style.cyan(` ${body} `);
     }
     return style.gray(` ${body} `);
   };
@@ -593,40 +622,39 @@ function segmentedKind(value: "claude" | "codex" | "shell", active: boolean): st
 }
 
 function checkboxLine(label: string, checked: boolean, active: boolean, enabled: boolean, hint: string): string {
-  const marker = active ? style.cyan("›") : " ";
-  const boxValue = checked ? "[x]" : "[ ]";
+  const marker = active ? style.cyan("┃") : style.gray("│");
+  const boxValue = checked ? "on" : "off";
   const value = enabled
     ? checked
-      ? style.green(`${boxValue} on`)
-      : style.gray(`${boxValue} off`)
+      ? solid(boxValue, "green")
+      : style.gray(` ${boxValue} `)
     : style.gray("disabled");
-  return `${marker} ${padEndVisible(label, 18)} ${value} ${style.dim(hint)}`;
+  return `${marker} ${padEndVisible(active ? style.white(style.bold(label)) : style.gray(label), 18)} ${value} ${style.dim(hint)}`;
 }
 
 function formTopBar(width: number, activeCount: number, config: SmuxConfig): string {
   const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const left = " smux ";
+  const left = `${solid("◆ smux", "cyan")} ${style.bold("new workspace")}`;
   const compact = width < 64;
   const meta = compact
-    ? ["new", `${activeCount} active`].join("  ·  ")
+    ? [`${activeCount} active`].join("  ·  ")
     : [
-        "new session",
         "local",
         `${activeCount} active`,
         `scroll ${config.tmux.historyLimit.toLocaleString()}`,
         `mouse ${config.tmux.mouse ? "on" : "off"}`
       ].join("  ·  ");
-  const right = ` ${now} `;
-  const center = `${left}${truncate(meta, Math.max(0, width - visibleLength(left) - visibleLength(right) - 2))}`;
+  const right = style.gray(now);
+  const center = `${left} ${style.dim(truncate(meta, Math.max(0, width - visibleLength(left) - visibleLength(right) - 3)))}`;
   const padding = Math.max(1, width - visibleLength(center) - visibleLength(right));
-  return style.inverse(`${center}${" ".repeat(padding)}${right}`);
+  return fillLine(`${center}${" ".repeat(padding)}${right}`, width);
 }
 
 function formStepLine(step: number): string {
   const labels = ["name", "agent", "resume", "objective", "tags", "start"];
   return labels
-    .map((label, index) => (index === step ? style.cyan(style.bold(label)) : style.gray(label)))
-    .join(style.gray("  /  "));
+    .map((label, index) => (index === step ? solid(`${index + 1} ${label}`, "cyan") : style.gray(`${index + 1} ${label}`)))
+    .join(style.gray("  "));
 }
 
 function startupPreview(state: NewSessionFormState): string {
@@ -747,7 +775,7 @@ export function formatStatus(session: SmuxSession): string {
         .join("\n")
     : `  ${style.gray("-")}`;
 
-  return boxLines(`${session.name} ${kindLabel(session.kind)} ${statusLabel(session.agentStatus)}`, [
+  return boxLines(`${style.cyan("focus")} ${session.name}`, [
     field("cwd", shortenPath(session.cwd)),
     field("git", git),
     field("tmux", session.status),
@@ -765,10 +793,11 @@ export function formatStatus(session: SmuxSession): string {
 }
 
 export function formatHelp(): string {
-  return [
-    `${style.bold(style.cyan("smux"))} ${style.dim("AI session control for tmux")}`,
+  return boxLines(`${style.cyan("smux")} command reference`, [
+    `${solid("◆ smux", "cyan")} ${style.bold("agent cockpit for tmux")}`,
+    style.dim("Manage Claude, Codex, and shell workspaces without losing context."),
     "",
-    sectionTitle("Usage"),
+    sectionTitle("usage"),
     `  ${style.bold("smux")}                                      ${style.dim("open the session dashboard")}`,
     `  ${style.bold("smux list")} [--view recent|path|kind|waiting] ${style.dim("show sessions")}`,
     `  ${style.bold("smux new")} [--kind codex|claude|shell]       ${style.dim("create a session")}`,
@@ -783,21 +812,23 @@ export function formatHelp(): string {
     `  ${style.bold("smux set")} <session> <key> <value>           ${style.dim("set a session override")}`,
     `  ${style.bold("smux kill")} <name-or-id>                     ${style.dim("terminate a session")}`,
     "",
-    sectionTitle("Views"),
+    sectionTitle("views"),
     `  ${key("r")} recent   ${key("p")} path   ${key("a")} agent   ${key("w")} waiting`,
     "",
-    sectionTitle("Config Keys"),
+    sectionTitle("config keys"),
     "  fullscreen",
     "  tmux.history-limit",
     "  tmux.mouse",
     "  tmux.mode-keys",
     "",
     style.dim("Package: smux-ai, binary: smux")
-  ].join("\n");
+  ], terminalWidth()).join("\n");
 }
 
 export function formatConfig(config: SmuxConfig, path: string): string {
-  return boxLines("smux config", [
+  return boxLines(`${style.cyan("smux")} config`, [
+    `${solid("global", "cyan")} ${style.bold("defaults")}`,
+    "",
     field("path", path),
     field("fullscreen", config.fullscreen ? style.green("on") : style.gray("off")),
     field("tmux.history-limit", style.yellow(String(config.tmux.historyLimit))),
@@ -811,7 +842,9 @@ export function formatConfig(config: SmuxConfig, path: string): string {
 }
 
 export function formatSessionConfig(session: SmuxSession, effective: Required<TmuxOptions>): string {
-  return boxLines(`session config ${session.name}`, [
+  return boxLines(`${style.cyan("session")} config ${session.name}`, [
+    `${kindBadge(session.kind)} ${statusBadge(session.agentStatus)} ${style.gray(session.status)}`,
+    "",
     field("tmux.history-limit", String(session.tmux?.historyLimit ?? `${effective.historyLimit} (global)`)),
     field("tmux.mouse", session.tmux?.mouse === undefined ? `${effective.mouse ? "on" : "off"} (global)` : session.tmux.mouse ? "on" : "off"),
     field("tmux.mode-keys", session.tmux?.modeKeys ?? `${effective.modeKeys} (global)`),
