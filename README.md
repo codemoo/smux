@@ -7,7 +7,7 @@ The npm package name is `smux-ai`; the installed binary is `smux`.
 The first implementation target is local-only:
 
 - list existing local `tmux` sessions by recent use, path, or agent kind
-- use a full-screen terminal dashboard by default
+- use a full-screen two-pane terminal dashboard by default
 - navigate with direct keys: `j/k`, arrow keys, `/`, `?`, `enter`
 - create a new session from the current directory
 - choose session kind: `claude`, `codex`, or `shell`
@@ -65,3 +65,5 @@ m              send message
 x              kill session
 q              quit
 ```
+
+The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. This is the primary interface; subcommands remain available for scripting.

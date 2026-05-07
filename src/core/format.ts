@@ -1,7 +1,23 @@
 import { relative } from "node:path";
 import { homedir } from "node:os";
 import type { ListView, SmuxConfig, SmuxSession, TmuxOptions } from "./types.js";
-import { box, field, key, padEndVisible, pill, sectionTitle, style, terminalWidth, truncate } from "./theme.js";
+import {
+  box,
+  boxLines,
+  field,
+  fillLine,
+  joinColumns,
+  key,
+  padEndVisible,
+  pill,
+  sectionTitle,
+  style,
+  stripAnsi,
+  terminalHeight,
+  terminalWidth,
+  truncate,
+  visibleLength
+} from "./theme.js";
 import { gitLabel, kindLabel, statusLabel } from "./ui.js";
 
 function shortenPath(path: string): string {
@@ -96,6 +112,19 @@ function emptyList(filter?: string): string {
     "",
     style.dim("Try: smux new --kind codex --name work")
   ]);
+}
+
+function emptyPanel(filter: string): string[] {
+  return [
+    "",
+    style.bold(filter ? "No matching sessions" : "No active tmux sessions"),
+    "",
+    `${key("n")} create a new session`,
+    `${key("/")} ${filter ? "adjust filter" : "filter sessions"}`,
+    `${key("?")} show keyboard help`,
+    "",
+    style.dim("smux new --kind codex --name work")
+  ];
 }
 
 export function formatShell(view: ListView, sessions: SmuxSession[], filter = "", config?: SmuxConfig): string {
@@ -219,6 +248,204 @@ function formatFocus(session?: SmuxSession): string {
   ]);
 }
 
+function statusDot(session: SmuxSession): string {
+  if (session.agentStatus === "running") {
+    return style.green("●");
+  }
+  if (session.agentStatus === "waiting") {
+    return style.yellow("●");
+  }
+  if (session.agentStatus === "blocked") {
+    return style.red("●");
+  }
+  if (session.agentStatus === "done") {
+    return style.blue("●");
+  }
+  return style.gray("●");
+}
+
+function dashboardSessionRows(options: {
+  sessions: SmuxSession[];
+  selected?: SmuxSession;
+  width: number;
+  height: number;
+  filter: string;
+}): string[] {
+  if (options.sessions.length === 0) {
+    return emptyPanel(options.filter);
+  }
+
+  const rowHeight = 2;
+  const availableRows = Math.max(1, Math.floor((options.height - 3) / rowHeight));
+  const selectedIndex = Math.max(0, options.selected ? options.sessions.findIndex((session) => session.id === options.selected?.id) : 0);
+  const start = Math.min(
+    Math.max(0, selectedIndex - Math.floor(availableRows / 2)),
+    Math.max(0, options.sessions.length - availableRows)
+  );
+  const visible = options.sessions.slice(start, start + availableRows);
+  const rows: string[] = [];
+
+  for (const session of visible) {
+    const globalIndex = options.sessions.indexOf(session);
+    const selected = session.id === options.selected?.id;
+    const number = style.gray(String(globalIndex + 1).padStart(2));
+    const titleWidth = Math.max(12, options.width - 30);
+    const title = padEndVisible(style.bold(session.name), titleWidth);
+    const head = `${selected ? style.cyan("›") : " "} ${number} ${statusDot(session)} ${kindLabel(session.kind)} ${title} ${statusLabel(session.agentStatus)}`;
+    const metaParts = [
+      shortenPath(session.cwd),
+      session.gitBranch ? `${session.gitBranch}${session.gitDirty ? "*" : ""}` : undefined,
+      session.objective || undefined
+    ].filter(Boolean);
+    const meta = `    ${style.dim(truncate(metaParts.join(" · "), options.width - 6))}`;
+    rows.push(selected ? style.inverse(stripAnsi(fillLine(head, options.width))) : fillLine(head, options.width));
+    rows.push(selected ? style.bold(meta) : meta);
+  }
+
+  if (options.sessions.length > visible.length) {
+    rows.push(style.gray(`showing ${start + 1}-${start + visible.length} of ${options.sessions.length}`));
+  }
+
+  return rows;
+}
+
+function detailRows(session: SmuxSession | undefined, width: number): string[] {
+  if (!session) {
+    return [
+      style.bold("No session selected"),
+      "",
+      "Create a session to start managing agent work.",
+      "",
+      `${key("n")} new session`,
+      `${key("?")} keyboard help`
+    ];
+  }
+
+  const preview = session.lastPreview
+    ? session.lastPreview
+        .split("\n")
+        .filter(Boolean)
+        .slice(-7)
+        .map((line) => `  ${style.dim(truncate(line, width - 8))}`)
+    : [`  ${style.gray("-")}`];
+  const notes = session.notes.length
+    ? session.notes.slice(-3).map((note) => `  ${style.gray("-")} ${truncate(note.text, width - 8)}`)
+    : [`  ${style.gray("-")}`];
+  const tags = session.tags.length ? session.tags.map((tag) => style.cyan(`#${tag}`)).join(" ") : style.gray("-");
+  const scroll = [
+    `history ${session.tmux?.historyLimit ?? "global"}`,
+    `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`
+  ].join(" · ");
+
+  return [
+    `${kindLabel(session.kind)} ${statusLabel(session.agentStatus)} ${style.gray(session.status)}`,
+    "",
+    field("cwd", shortenPath(session.cwd)),
+    field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-")),
+    field("scroll", scroll),
+    field("tags", tags),
+    "",
+    sectionTitle("objective"),
+    `  ${session.objective ? truncate(session.objective, width - 6) : style.gray("no objective")}`,
+    "",
+    sectionTitle("preview"),
+    ...preview,
+    "",
+    sectionTitle("notes"),
+    ...notes
+  ];
+}
+
+function commandBar(width: number): string {
+  const left = " ↑/↓ move  enter attach  n new  / filter  ? help";
+  const right = "s status  m send  x kill  q quit ";
+  if (visibleLength(left) + visibleLength(right) + 4 > width) {
+    return style.inverse(fillLine(" enter attach   n new   / filter   ? help   q quit", width));
+  }
+  return style.inverse(`${left}${" ".repeat(Math.max(1, width - visibleLength(left) - visibleLength(right)))}${right}`);
+}
+
+function topBar(options: {
+  width: number;
+  view: ListView;
+  sessions: SmuxSession[];
+  filter: string;
+  config: SmuxConfig;
+}): string[] {
+  const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const title = ` smux `;
+  const meta = [
+    "local",
+    `${options.sessions.length} active`,
+    `view ${options.view}`,
+    options.filter ? `filter ${options.filter}` : undefined,
+    `scroll ${options.config.tmux.historyLimit.toLocaleString()}`,
+    `mouse ${options.config.tmux.mouse ? "on" : "off"}`
+  ].filter(Boolean).join("  ·  ");
+  const right = ` ${now} `;
+  const maxMetaWidth = Math.max(0, options.width - visibleLength(title) - visibleLength(right) - 2);
+  const line = `${title}${truncate(meta, maxMetaWidth)}`;
+  const padding = Math.max(1, options.width - visibleLength(line) - visibleLength(right));
+  return [
+    style.inverse(`${line}${" ".repeat(padding)}${right}`),
+    `${formatTabs(options.view)}  ${counts(options.sessions)}`
+  ];
+}
+
+function formatDashboardWide(options: {
+  view: ListView;
+  sessions: SmuxSession[];
+  allSessions: SmuxSession[];
+  selected?: SmuxSession;
+  filter: string;
+  config: SmuxConfig;
+  message?: string;
+}): string {
+  const width = terminalWidth();
+  const height = terminalHeight();
+  const leftWidth = Math.max(48, Math.floor(width * 0.58));
+  const rightWidth = width - leftWidth - 2;
+  const panelHeight = Math.max(12, height - 8);
+
+  const left = boxLines(
+    `sessions ${options.sessions.length}/${options.allSessions.length}`,
+    dashboardSessionRows({
+      sessions: options.sessions,
+      selected: options.selected,
+      width: leftWidth - 4,
+      height: panelHeight - 2,
+      filter: options.filter
+    }),
+    leftWidth,
+    panelHeight
+  );
+  const right = boxLines(
+    options.selected ? `details ${options.selected.name}` : "details",
+    detailRows(options.selected, rightWidth - 4),
+    rightWidth,
+    panelHeight
+  );
+
+  const [header, subheader] = topBar({
+    width,
+    view: options.view,
+    sessions: options.allSessions,
+    filter: options.filter,
+    config: options.config
+  });
+  const notice = options.message ? `${style.yellow("notice")} ${options.message}` : "";
+
+  return [
+    header,
+    subheader,
+    notice,
+    "",
+    ...joinColumns(left, right),
+    "",
+    commandBar(width)
+  ].join("\n");
+}
+
 export function formatDashboard(options: {
   view: ListView;
   sessions: SmuxSession[];
@@ -228,6 +455,10 @@ export function formatDashboard(options: {
   config: SmuxConfig;
   message?: string;
 }): string {
+  if (terminalWidth() >= 104) {
+    return formatDashboardWide(options);
+  }
+
   return [
     formatShell(options.view, options.allSessions, options.filter, options.config),
     counts(options.allSessions),
