@@ -8,6 +8,7 @@ The first implementation target is local-only:
 
 - list existing local `tmux` sessions by recent use, path, or agent kind
 - use a full-screen terminal dashboard by default
+- navigate with direct keys: `j/k`, arrow keys, `/`, `?`, `enter`
 - create a new session from the current directory
 - choose session kind: `claude`, `codex`, or `shell`
 - attach to an existing session
@@ -48,4 +49,19 @@ smux config set tmux.history-limit 200000
 smux config set tmux.mouse on
 smux config set fullscreen on
 smux set my-session tmux.history-limit 300000
+```
+
+Dashboard keys:
+
+```text
+j/k or arrows  move selection
+enter          attach selected session
+n              new session
+/              filter sessions
+?              key help
+r/p/a/w        recent/path/agent/waiting views
+s              status panel
+m              send message
+x              kill session
+q              quit
 ```

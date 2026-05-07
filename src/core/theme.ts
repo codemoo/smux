@@ -55,6 +55,11 @@ export function key(value: string): string {
   return style.inverse(` ${value} `);
 }
 
+export function pill(value: string, tone: "cyan" | "green" | "yellow" | "red" | "gray" = "gray"): string {
+  const color = style[tone];
+  return color(`[${value}]`);
+}
+
 export function field(label: string, value: string): string {
   return `${style.gray(`${label}:`)} ${value}`;
 }

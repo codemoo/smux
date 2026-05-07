@@ -2,7 +2,14 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { style } from "../core/theme.js";
 
+function disableRawMode(): void {
+  if (input.isTTY && typeof input.setRawMode === "function") {
+    input.setRawMode(false);
+  }
+}
+
 export async function ask(question: string, defaultValue?: string): Promise<string> {
+  disableRawMode();
   const rl = createInterface({ input, output });
   try {
     const suffix = defaultValue ? ` (${defaultValue})` : "";

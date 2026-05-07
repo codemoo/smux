@@ -66,4 +66,4 @@ export interface GitInfo {
   dirty?: boolean;
 }
 
-export type ListView = "recent" | "path" | "kind";
+export type ListView = "recent" | "path" | "kind" | "waiting";

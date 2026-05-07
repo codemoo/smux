@@ -74,10 +74,10 @@ function parseView(value?: string): ListView {
   if (value === undefined) {
     return "recent";
   }
-  if (value === "recent" || value === "path" || value === "kind") {
+  if (value === "recent" || value === "path" || value === "kind" || value === "waiting") {
     return value;
   }
-  throw new Error(`Invalid --view "${value}". Use recent, path, or kind.`);
+  throw new Error(`Invalid --view "${value}". Use recent, path, kind, or waiting.`);
 }
 
 function usage(): string {

@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 import { homedir } from "node:os";
 import type { ListView, SmuxConfig, SmuxSession, TmuxOptions } from "./types.js";
-import { box, field, key, padEndVisible, sectionTitle, style, terminalWidth, truncate } from "./theme.js";
+import { box, field, key, padEndVisible, pill, sectionTitle, style, terminalWidth, truncate } from "./theme.js";
 import { gitLabel, kindLabel, statusLabel } from "./ui.js";
 
 function shortenPath(path: string): string {
@@ -59,16 +59,18 @@ export function sortRecent(sessions: SmuxSession[]): SmuxSession[] {
   });
 }
 
-export function sessionLine(session: SmuxSession, index?: number): string {
+export function sessionLine(session: SmuxSession, index?: number, selected = false): string {
   const widths = tableWidths();
-  const prefix = index === undefined ? "" : `${style.gray(String(index + 1).padStart(2))}  `;
+  const marker = selected ? style.cyan("›") : " ";
+  const prefix = index === undefined ? "" : `${marker} ${style.gray(String(index + 1).padStart(2))} `;
   const kind = padEndVisible(kindLabel(session.kind), 7);
   const name = padEndVisible(style.bold(session.name), widths.name);
   const cwd = padEndVisible(style.dim(shortenPath(session.cwd)), widths.cwd);
   const status = padEndVisible(statusLabel(session.agentStatus), 8);
   const git = padEndVisible(gitLabel(session.gitBranch, session.gitDirty), widths.git);
   const last = style.gray(timeLabel(session.lastAttachedAt));
-  return `${prefix}${kind} ${name} ${cwd} ${status} ${git} ${last}`;
+  const line = `${prefix}${kind} ${name} ${cwd} ${status} ${git} ${last}`;
+  return selected ? style.bold(line) : line;
 }
 
 function listHeader(): string {
@@ -84,30 +86,39 @@ function listHeader(): string {
   ].join(" ");
 }
 
-function emptyList(): string {
+function emptyList(filter?: string): string {
   return box(style.cyan("smux"), [
-    style.bold("No active tmux sessions"),
+    style.bold(filter ? "No matching sessions" : "No active tmux sessions"),
     "",
     `${key("n")} create a session from this directory`,
+    `${key("/")} ${filter ? "clear or change filter" : "filter sessions"}`,
     `${key("q")} quit`,
     "",
     style.dim("Try: smux new --kind codex --name work")
   ]);
 }
 
-export function formatShell(view: ListView, sessions: SmuxSession[]): string {
+export function formatShell(view: ListView, sessions: SmuxSession[], filter = "", config?: SmuxConfig): string {
   const count = sessions.length;
   const active = count === 1 ? "1 session" : `${count} sessions`;
+  const scroll = config ? `scroll ${config.tmux.historyLimit.toLocaleString()} · mouse ${config.tmux.mouse ? "on" : "off"}` : "";
   return [
-    `${style.bold(style.cyan("smux"))} ${style.dim("AI session control for tmux")}`,
-    `${style.gray("view")} ${style.bold(view)}   ${style.gray("active")} ${active}`
+    `${style.bold(style.cyan("smux"))} ${style.dim("AI session control for tmux")} ${style.gray("·")} ${style.gray(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}`,
+    `${style.gray("view")} ${style.bold(view)}   ${style.gray("active")} ${active}${filter ? `   ${style.gray("filter")} ${style.yellow(filter)}` : ""}${scroll ? `   ${style.gray(scroll)}` : ""}`
   ].join("\n");
 }
 
-export function formatList(sessions: SmuxSession[], view: ListView): string {
+export function formatList(sessions: SmuxSession[], view: ListView, selectedId?: string, filter?: string): string {
   const active = sortRecent(sessions);
   if (active.length === 0) {
-    return emptyList();
+    return emptyList(filter);
+  }
+
+  if (view === "waiting") {
+    return [
+      listHeader(),
+      ...active.map((session, index) => sessionLine(session, index, session.id === selectedId))
+    ].join("\n");
   }
 
   if (view === "path") {
@@ -121,7 +132,7 @@ export function formatList(sessions: SmuxSession[], view: ListView): string {
         [
           sectionTitle(path),
           listHeader(),
-          ...items.map((item) => sessionLine(item, active.indexOf(item)))
+          ...items.map((item) => sessionLine(item, active.indexOf(item), item.id === selectedId))
         ].join("\n")
       )
       .join("\n\n");
@@ -138,7 +149,7 @@ export function formatList(sessions: SmuxSession[], view: ListView): string {
         return [
           sectionTitle(kindLabel(kind)),
           listHeader(),
-          ...items.map((item) => sessionLine(item, active.indexOf(item)))
+          ...items.map((item) => sessionLine(item, active.indexOf(item), item.id === selectedId))
         ].join("\n");
       })
       .filter(Boolean)
@@ -147,8 +158,104 @@ export function formatList(sessions: SmuxSession[], view: ListView): string {
 
   return [
     listHeader(),
-    ...active.map((session, index) => sessionLine(session, index))
+    ...active.map((session, index) => sessionLine(session, index, session.id === selectedId))
   ].join("\n");
+}
+
+function counts(sessions: SmuxSession[]): string {
+  const waiting = sessions.filter((session) => session.agentStatus === "waiting").length;
+  const blocked = sessions.filter((session) => session.agentStatus === "blocked").length;
+  const running = sessions.filter((session) => session.agentStatus === "running").length;
+  const codex = sessions.filter((session) => session.kind === "codex").length;
+  const claude = sessions.filter((session) => session.kind === "claude").length;
+  return [
+    pill(`${sessions.length} active`, "cyan"),
+    pill(`${running} running`, "green"),
+    pill(`${waiting} waiting`, waiting ? "yellow" : "gray"),
+    pill(`${blocked} blocked`, blocked ? "red" : "gray"),
+    pill(`${codex} codex`, "gray"),
+    pill(`${claude} claude`, "gray")
+  ].join(" ");
+}
+
+function tab(label: string, active: boolean): string {
+  return active ? style.inverse(` ${label} `) : style.gray(` ${label} `);
+}
+
+export function formatTabs(view: ListView): string {
+  return [
+    tab("r recent", view === "recent"),
+    tab("p path", view === "path"),
+    tab("a agent", view === "kind"),
+    tab("w waiting", view === "waiting")
+  ].join(" ");
+}
+
+function formatFocus(session?: SmuxSession): string {
+  if (!session) {
+    return box("focus", [style.gray("No session selected")]);
+  }
+
+  const preview = session.lastPreview
+    ? session.lastPreview
+        .split("\n")
+        .filter(Boolean)
+        .slice(-4)
+        .map((line) => `  ${style.dim(truncate(line, terminalWidth() - 8))}`)
+        .join("\n")
+    : `  ${style.gray("-")}`;
+
+  const objective = session.objective || style.gray("no objective");
+  const tags = session.tags.length ? session.tags.map((tag) => style.cyan(`#${tag}`)).join(" ") : style.gray("-");
+
+  return box(`focus ${session.name}`, [
+    `${kindLabel(session.kind)} ${statusLabel(session.agentStatus)}   ${field("cwd", shortenPath(session.cwd))}`,
+    `${field("objective", objective)}`,
+    `${field("tags", tags)}`,
+    `${field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-"))}`,
+    "",
+    sectionTitle("preview"),
+    preview
+  ]);
+}
+
+export function formatDashboard(options: {
+  view: ListView;
+  sessions: SmuxSession[];
+  allSessions: SmuxSession[];
+  selected?: SmuxSession;
+  filter: string;
+  config: SmuxConfig;
+  message?: string;
+}): string {
+  return [
+    formatShell(options.view, options.allSessions, options.filter, options.config),
+    counts(options.allSessions),
+    "",
+    formatTabs(options.view),
+    options.message ? `${style.yellow("notice")} ${options.message}` : "",
+    "",
+    formatList(options.sessions, options.view, options.selected?.id, options.filter),
+    "",
+    formatFocus(options.selected),
+    "",
+    `${key("↑/↓ j/k")} move  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help`,
+    `${key("s")} status  ${key("m")} send  ${key("x")} kill  ${key("esc")} clear  ${key("q")} quit`
+  ].filter((line) => line !== "").join("\n");
+}
+
+export function formatDashboardHelp(): string {
+  return box("keyboard", [
+    `${key("↑/↓")} or ${key("j/k")} move selection`,
+    `${key("enter")} attach to selected tmux session`,
+    `${key("n")} create a new session`,
+    `${key("/")} filter by name, path, objective, tag, kind, branch, or state`,
+    `${key("r")} recent view   ${key("p")} path view   ${key("a")} agent view   ${key("w")} waiting view`,
+    `${key("s")} inspect selected session without attaching`,
+    `${key("m")} send a prompt to selected agent`,
+    `${key("x")} kill selected session after confirmation`,
+    `${key("esc")} clear filter   ${key("q")} quit`
+  ]);
 }
 
 export function formatStatus(session: SmuxSession): string {
@@ -192,7 +299,7 @@ export function formatHelp(): string {
     "",
     sectionTitle("Usage"),
     `  ${style.bold("smux")}                                      ${style.dim("open the session dashboard")}`,
-    `  ${style.bold("smux list")} [--view recent|path|kind]        ${style.dim("show sessions")}`,
+    `  ${style.bold("smux list")} [--view recent|path|kind|waiting] ${style.dim("show sessions")}`,
     `  ${style.bold("smux new")} [--kind codex|claude|shell]       ${style.dim("create a session")}`,
     `            [--history-limit N] [--mouse|--no-mouse]`,
     `  ${style.bold("smux attach")} <name-or-id>                   ${style.dim("attach to tmux")}`,
@@ -205,7 +312,7 @@ export function formatHelp(): string {
     `  ${style.bold("smux kill")} <name-or-id>                     ${style.dim("terminate a session")}`,
     "",
     sectionTitle("Views"),
-    `  ${key("r")} recent   ${key("p")} path   ${key("k")} kind`,
+    `  ${key("r")} recent   ${key("p")} path   ${key("a")} agent   ${key("w")} waiting`,
     "",
     sectionTitle("Config Keys"),
     "  fullscreen",
