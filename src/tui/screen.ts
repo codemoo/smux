@@ -21,9 +21,68 @@ export type ScreenInput =
       type: "timeout";
     };
 
+interface PendingInput {
+  resolve(input: ScreenInput): void;
+  timer?: NodeJS.Timeout;
+}
+
+const inputQueue: ScreenInput[] = [];
+let inputCaptureActive = false;
+let pendingInput: PendingInput | undefined;
+
 function setRawMode(enabled: boolean): void {
   if (stdin.isTTY && typeof stdin.setRawMode === "function") {
     stdin.setRawMode(enabled);
+  }
+}
+
+function settleInput(input: ScreenInput): void {
+  if (!pendingInput) {
+    inputQueue.push(input);
+    return;
+  }
+  const pending = pendingInput;
+  pendingInput = undefined;
+  if (pending.timer) {
+    clearTimeout(pending.timer);
+  }
+  pending.resolve(input);
+}
+
+const keypressHandler = (_value: string, key: KeyInput) => {
+  settleInput({ type: "key", key });
+};
+
+const resizeHandler = () => {
+  settleInput({ type: "resize" });
+};
+
+function startInputCapture(): void {
+  if (inputCaptureActive) {
+    return;
+  }
+  emitKeypressEvents(stdin);
+  stdin.on("keypress", keypressHandler);
+  stdout.on("resize", resizeHandler);
+  inputCaptureActive = true;
+}
+
+function stopInputCapture(): void {
+  if (!inputCaptureActive) {
+    inputQueue.length = 0;
+    return;
+  }
+  stdin.off("keypress", keypressHandler);
+  stdout.off("resize", resizeHandler);
+  inputCaptureActive = false;
+  inputQueue.length = 0;
+  if (pendingInput) {
+    const pending = pendingInput;
+    pendingInput = undefined;
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    pending.resolve({ type: "timeout" });
   }
 }
 
@@ -40,6 +99,7 @@ export class FullScreen {
     this.active = true;
     this.frame = undefined;
     setRawMode(true);
+    startInputCapture();
     stdin.resume();
     stdout.write("\u001b[?1049h\u001b[?25l\u001b[2J\u001b[H");
   }
@@ -65,6 +125,7 @@ export class FullScreen {
       return;
     }
     setRawMode(false);
+    stopInputCapture();
     stdin.pause();
     stdout.write("\u001b[?25h\u001b[?1049l");
     this.frame = undefined;
@@ -74,6 +135,7 @@ export class FullScreen {
   suspend(): void {
     this.frame = undefined;
     stdout.write("\u001b[?25h");
+    stopInputCapture();
     setRawMode(false);
   }
 
@@ -81,6 +143,7 @@ export class FullScreen {
     if (this.active) {
       this.frame = undefined;
       setRawMode(true);
+      startInputCapture();
       stdin.resume();
       stdout.write("\u001b[?25l");
     }
@@ -88,34 +151,26 @@ export class FullScreen {
 }
 
 export function readInput(timeoutMs?: number): Promise<ScreenInput> {
-  emitKeypressEvents(stdin);
+  startInputCapture();
   setRawMode(true);
   stdin.resume();
 
   return new Promise((resolve) => {
-    const timer = timeoutMs
-      ? setTimeout(() => {
-          cleanup();
+    const queued = inputQueue.shift();
+    if (queued) {
+      resolve(queued);
+      return;
+    }
+    const pending: PendingInput = { resolve };
+    if (timeoutMs) {
+      pending.timer = setTimeout(() => {
+        if (pendingInput === pending) {
+          pendingInput = undefined;
           resolve({ type: "timeout" });
-        }, timeoutMs)
-      : undefined;
-    const handler = (_value: string, key: KeyInput) => {
-      cleanup();
-      resolve({ type: "key", key });
-    };
-    const resizeHandler = () => {
-      cleanup();
-      resolve({ type: "resize" });
-    };
-    const cleanup = () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-      stdin.off("keypress", handler);
-      stdout.off("resize", resizeHandler);
-    };
-    stdin.on("keypress", handler);
-    stdout.on("resize", resizeHandler);
+        }
+      }, timeoutMs);
+    }
+    pendingInput = pending;
   });
 }
 

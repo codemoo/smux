@@ -59,11 +59,23 @@ async function leaveForTmux(screen: FullScreen, action: () => Promise<void>): Pr
   }
 }
 
+const REFRESH_MS = 1_000;
+const INPUT_IDLE_REFRESH_PAUSE_MS = 3_000;
+
+function refreshTimeout(lastKeyAt: number): number {
+  const idleFor = Date.now() - lastKeyAt;
+  if (idleFor < INPUT_IDLE_REFRESH_PAUSE_MS) {
+    return INPUT_IDLE_REFRESH_PAUSE_MS - idleFor;
+  }
+  return REFRESH_MS;
+}
+
 export async function runMainMenu(context: CommandContext): Promise<void> {
   let view: ListView = "recent";
   let filter = "";
   let selectedIndex = 0;
   let message: string | undefined;
+  let lastKeyAt = 0;
   const screen = new FullScreen(context.config.fullscreen);
   screen.start();
 
@@ -86,10 +98,11 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
       }));
       message = undefined;
 
-      const input = await readInput(1_000);
+      const input = await readInput(refreshTimeout(lastKeyAt));
       if (input.type !== "key") {
         continue;
       }
+      lastKeyAt = Date.now();
       const key = input.key;
       const name = key.name;
       const sequence = key.sequence;
