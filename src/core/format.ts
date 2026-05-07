@@ -19,6 +19,10 @@ import {
   visibleLength
 } from "./theme.js";
 import { gitLabel, kindBadge, kindLabel, statusBadge, statusLabel } from "./ui.js";
+import type { TokenUsageSummary } from "./token-usage.js";
+
+export type DashboardPane = "list" | "focus";
+export type DashboardFocusItem = "name" | "preview" | "message";
 
 interface NewSessionFormState {
   step: number;
@@ -331,6 +335,68 @@ function startupLabel(session: SmuxSession): string {
   return session.kind === "codex" ? "resume (codex resume)" : "resume (claude -r)";
 }
 
+function tokenLabel(value: number): string {
+  if (value <= 0) {
+    return "-";
+  }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}k`;
+  }
+  return String(value);
+}
+
+function tokenUsageLine(usage?: TokenUsageSummary): string {
+  if (!usage) {
+    return style.gray("shell");
+  }
+  if (!usage.available) {
+    return style.gray(`${usage.source} logs unavailable`);
+  }
+  return [
+    mutedLabel("total", style.yellow(tokenLabel(usage.total))),
+    mutedLabel("today", style.yellow(tokenLabel(usage.today))),
+    mutedLabel("5h", style.yellow(tokenLabel(usage.last5h)))
+  ].join(style.gray("  ·  "));
+}
+
+function focusRow(options: {
+  label: string;
+  value: string;
+  active: boolean;
+  width: number;
+  hint?: string;
+}): string {
+  const marker = options.active ? style.cyan("┃") : style.gray("│");
+  const label = padEndVisible(options.active ? style.white(style.bold(options.label)) : style.gray(options.label), 10);
+  const value = options.active ? solid(` ${options.value || " "} `, "cyan") : style.white(options.value || "-");
+  const hint = options.hint ? ` ${style.dim(options.hint)}` : "";
+  return truncate(`${marker} ${label} ${value}${hint}`, options.width);
+}
+
+function previewRows(preview: string | undefined, width: number, scroll: number, active: boolean): string[] {
+  const lines = preview
+    ? preview.split("\n").filter(Boolean)
+    : [];
+  const visibleCount = 8;
+  const maxOffset = Math.max(0, lines.length - visibleCount);
+  const offset = Math.min(Math.max(scroll, 0), maxOffset);
+  const end = Math.max(0, lines.length - offset);
+  const start = Math.max(0, end - visibleCount);
+  const visible = lines.slice(start, end);
+  if (visible.length === 0) {
+    return [`  ${style.gray("-")}`];
+  }
+  const marker = active ? style.cyan("┃") : style.gray("│");
+  const header = `${marker} ${style.gray("preview")} ${style.dim(offset > 0 ? `scroll ${offset}` : "live")}`;
+  return [
+    header,
+    ...visible.map((line) => `  ${style.dim(truncate(line, width - 4))}`)
+  ];
+}
+
 function dashboardSessionRows(options: {
   sessions: SmuxSession[];
   selected?: SmuxSession;
@@ -378,7 +444,17 @@ function dashboardSessionRows(options: {
   return rows;
 }
 
-function detailRows(session: SmuxSession | undefined, width: number): string[] {
+function detailRows(options: {
+  session?: SmuxSession;
+  width: number;
+  pane: DashboardPane;
+  focusItem: DashboardFocusItem;
+  renameDraft: string;
+  messageDraft: string;
+  previewScroll: number;
+  tokenUsage?: TokenUsageSummary;
+}): string[] {
+  const { session, width } = options;
   if (!session) {
     return [
       style.bold("No session selected"),
@@ -390,13 +466,6 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     ];
   }
 
-  const preview = session.lastPreview
-    ? session.lastPreview
-        .split("\n")
-        .filter(Boolean)
-        .slice(-7)
-        .map((line) => `  ${style.dim(truncate(line, width - 8))}`)
-    : [`  ${style.gray("-")}`];
   const notes = session.notes.length
     ? session.notes.slice(-3).map((note) => `  ${style.gray("-")} ${truncate(note.text, width - 8)}`)
     : [`  ${style.gray("-")}`];
@@ -410,33 +479,63 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     startupBadge(session),
     width
   );
+  const inFocus = options.pane === "focus";
+  const nameActive = inFocus && options.focusItem === "name";
+  const previewActive = inFocus && options.focusItem === "preview";
+  const messageActive = inFocus && options.focusItem === "message";
+  const canMessage = session.kind !== "shell";
+  const messageValue = canMessage
+    ? options.messageDraft || "type prompt..."
+    : "shell session";
 
   return [
     title,
     divider(width),
     "",
+    focusRow({
+      label: "name",
+      value: options.renameDraft || session.name,
+      active: nameActive,
+      width,
+      hint: nameActive ? "enter renames" : undefined
+    }),
     field("cwd", style.white(shortenPath(session.cwd))),
     field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-")),
     field("startup", startupLabel(session)),
     field("scroll", scroll),
+    field("tokens", tokenUsageLine(options.tokenUsage)),
     field("tags", tags),
     "",
     sectionTitle("objective"),
     `  ${session.objective ? truncate(session.objective, width - 6) : style.gray("no objective")}`,
     "",
-    sectionTitle("preview"),
-    ...preview,
+    ...previewRows(session.lastPreview, width, options.previewScroll, previewActive),
+    "",
+    focusRow({
+      label: "message",
+      value: messageValue,
+      active: messageActive,
+      width,
+      hint: canMessage ? "enter sends" : "disabled"
+    }),
     "",
     sectionTitle("notes"),
     ...notes
   ];
 }
 
-function commandBar(width: number): string {
-  const left = `${key("↑/↓")} move  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter`;
-  const right = `${key("s")} status  ${key("m")} send  ${key("x")} kill  ${key("q")} quit`;
+function commandBar(width: number, pane: DashboardPane): string {
+  const left = pane === "focus"
+    ? `${key("←")} list  ${key("↑/↓")} field  ${key("enter")} apply/send  ${key("pgup/pgdn")} preview`
+    : `${key("↑/↓")} move  ${key("→")} focus  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help`;
+  const right = pane === "focus" ? `${key("esc")} list` : `${key("s")} status  ${key("x")} kill  ${key("q")} quit`;
   if (visibleLength(left) + visibleLength(right) + 4 > width) {
-    return fillLine(`${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help  ${key("q")} quit`, width);
+    return fillLine(
+      pane === "focus"
+        ? `${key("←")} list  ${key("↑/↓")} field  ${key("enter")} apply/send  ${key("esc")} list`
+        : `${key("→")} focus  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help  ${key("q")} quit`,
+      width
+    );
   }
   return fillLine(`${left}${" ".repeat(Math.max(1, width - visibleLength(left) - visibleLength(right)))}${right}`, width);
 }
@@ -477,6 +576,12 @@ function formatDashboardWide(options: {
   filter: string;
   config: SmuxConfig;
   message?: string;
+  pane: DashboardPane;
+  focusItem: DashboardFocusItem;
+  renameDraft: string;
+  messageDraft: string;
+  previewScroll: number;
+  tokenUsage?: TokenUsageSummary;
 }): string {
   const width = terminalWidth();
   const height = terminalHeight();
@@ -499,7 +604,16 @@ function formatDashboardWide(options: {
   );
   const right = boxLines(
     options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
-    detailRows(options.selected, rightWidth - 4),
+    detailRows({
+      session: options.selected,
+      width: rightWidth - 4,
+      pane: options.pane,
+      focusItem: options.focusItem,
+      renameDraft: options.renameDraft,
+      messageDraft: options.messageDraft,
+      previewScroll: options.previewScroll,
+      tokenUsage: options.tokenUsage
+    }),
     rightWidth,
     panelHeight
   );
@@ -520,7 +634,7 @@ function formatDashboardWide(options: {
     "",
     ...joinColumns(left, right),
     "",
-    commandBar(width)
+    commandBar(width, options.pane)
   ].join("\n");
 }
 
@@ -532,6 +646,12 @@ function formatDashboardStacked(options: {
   filter: string;
   config: SmuxConfig;
   message?: string;
+  pane: DashboardPane;
+  focusItem: DashboardFocusItem;
+  renameDraft: string;
+  messageDraft: string;
+  previewScroll: number;
+  tokenUsage?: TokenUsageSummary;
 }): string {
   const width = terminalWidth();
   const height = terminalHeight();
@@ -564,7 +684,16 @@ function formatDashboardStacked(options: {
   const details = showDetails
     ? boxLines(
         options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
-        detailRows(options.selected, width - 4),
+        detailRows({
+          session: options.selected,
+          width: width - 4,
+          pane: options.pane,
+          focusItem: options.focusItem,
+          renameDraft: options.renameDraft,
+          messageDraft: options.messageDraft,
+          previewScroll: options.previewScroll,
+          tokenUsage: options.tokenUsage
+        }),
         width,
         detailHeight
       )
@@ -578,7 +707,7 @@ function formatDashboardStacked(options: {
     ...list,
     ...(showDetails ? ["", ...details] : []),
     "",
-    commandBar(width)
+    commandBar(width, options.pane)
   ].join("\n");
 }
 
@@ -590,12 +719,26 @@ export function formatDashboard(options: {
   filter: string;
   config: SmuxConfig;
   message?: string;
+  pane?: DashboardPane;
+  focusItem?: DashboardFocusItem;
+  renameDraft?: string;
+  messageDraft?: string;
+  previewScroll?: number;
+  tokenUsage?: TokenUsageSummary;
 }): string {
+  const normalized = {
+    ...options,
+    pane: options.pane ?? "list",
+    focusItem: options.focusItem ?? "preview",
+    renameDraft: options.renameDraft ?? options.selected?.name ?? "",
+    messageDraft: options.messageDraft ?? "",
+    previewScroll: options.previewScroll ?? 0
+  };
   if (terminalWidth() >= 104) {
-    return formatDashboardWide(options);
+    return formatDashboardWide(normalized);
   }
 
-  return formatDashboardStacked(options);
+  return formatDashboardStacked(normalized);
 }
 
 export function formatDashboardHelp(): string {
@@ -605,8 +748,9 @@ export function formatDashboardHelp(): string {
     `${key("n")} create a new session`,
     `${key("/")} filter by name, path, objective, tag, kind, branch, or state`,
     `${key("r")} recent view   ${key("p")} path view   ${key("a")} agent view   ${key("w")} waiting view`,
+    `${key("→")} enter focus panel   ${key("←")} return to session list`,
+    `${key("enter")} rename/send when editing focus fields`,
     `${key("s")} inspect selected session without attaching`,
-    `${key("m")} send a prompt to selected agent`,
     `${key("x")} kill selected session after confirmation`,
     `${key("esc")} clear filter   ${key("q")} quit`
   ], terminalWidth(), Math.max(6, terminalHeight() - 1)).join("\n");
