@@ -1,0 +1,42 @@
+{
+  "name": "smux-ai",
+  "version": "0.1.0",
+  "description": "AI-agent session manager for tmux",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemoo/smux.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codemoo/smux/issues"
+  },
+  "homepage": "https://github.com/codemoo/smux#readme",
+  "bin": {
+    "smux": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "smux": "node dist/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "tmux",
+    "cli",
+    "codex",
+    "claude",
+    "agents"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}

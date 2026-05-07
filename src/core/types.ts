@@ -1,0 +1,56 @@
+export type SessionKind = "claude" | "codex" | "shell";
+
+export type AgentStatus =
+  | "idle"
+  | "running"
+  | "waiting"
+  | "blocked"
+  | "done"
+  | "unknown";
+
+export interface SmuxNote {
+  text: string;
+  createdAt: string;
+}
+
+export interface SmuxSession {
+  id: string;
+  name: string;
+  kind: SessionKind;
+  objective: string;
+  tags: string[];
+  agentStatus: AgentStatus;
+  cwd: string;
+  repoRoot?: string;
+  gitBranch?: string;
+  gitDirty?: boolean;
+  tmuxSessionId?: string;
+  tmuxSessionName: string;
+  status: "attached" | "detached" | "missing" | "terminated";
+  lastPreview?: string;
+  notes: SmuxNote[];
+  createdAt: string;
+  updatedAt: string;
+  lastAttachedAt?: string;
+}
+
+export interface SmuxState {
+  version: 1;
+  sessions: SmuxSession[];
+}
+
+export interface TmuxSession {
+  id: string;
+  name: string;
+  attached: boolean;
+  createdAtEpoch: number;
+  lastAttachedAtEpoch?: number;
+}
+
+export interface GitInfo {
+  repoRoot?: string;
+  branch?: string;
+  dirty?: boolean;
+}
+
+export type ListView = "recent" | "path" | "kind";
