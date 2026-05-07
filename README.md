@@ -21,7 +21,7 @@ The first implementation target is local-only:
 - inspect an agent session without attaching
 - send a short confirmed message to an agent session from outside tmux
 - set tmux scrollback/mouse defaults globally or per session
-- show `detach: C-b d` in the tmux statusline while attached
+- show `detach C-b d -> smux dashboard` in the tmux statusline while attached
 
 The first version is intentionally local-only. Remote tmux hosts come later.
 
@@ -81,4 +81,4 @@ x              kill session
 q              quit
 ```
 
-The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. It expands to the current terminal size and redraws when the terminal is resized. This is the primary interface; subcommands remain available for scripting.
+The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. When you detach from tmux with `C-b d`, control returns to the dashboard. It expands to the current terminal size and redraws when the terminal is resized. This is the primary interface; subcommands remain available for scripting.

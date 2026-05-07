@@ -10,6 +10,7 @@ import { ask, confirm } from "./prompt.js";
 import { FullScreen, readInput } from "./screen.js";
 import { fillLine, style, terminalWidth } from "../core/theme.js";
 import { runNewSessionForm } from "./form.js";
+import { reconcile } from "../core/reconcile.js";
 
 function matchesFilter(session: SmuxSession, filter: string): boolean {
   if (!filter) {
@@ -46,6 +47,15 @@ async function showOverlay(screen: FullScreen, render: () => string): Promise<vo
     if (input.type === "key") {
       return;
     }
+  }
+}
+
+async function leaveForTmux(screen: FullScreen, action: () => Promise<void>): Promise<void> {
+  screen.stop();
+  try {
+    await action();
+  } finally {
+    screen.start();
   }
 }
 
@@ -146,9 +156,12 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
           message = "New session cancelled.";
           continue;
         }
-        screen.stop();
-        await newCommand(context, result);
-        return;
+        await leaveForTmux(screen, async () => {
+          await newCommand(context, result);
+        });
+        context.state = reconcile(context.state);
+        message = "Detached. Back in smux.";
+        continue;
       }
 
       try {
@@ -165,9 +178,12 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
             message = "No session selected.";
             continue;
           }
-          screen.stop();
-          await attachCommand(context, selected.name);
-          return;
+          await leaveForTmux(screen, async () => {
+            await attachCommand(context, selected.name);
+          });
+          context.state = reconcile(context.state);
+          message = "Detached. Back in smux.";
+          continue;
         }
 
         const target = selected;

@@ -19,6 +19,8 @@
     "README.md"
   ],
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
     "smux": "node dist/cli.js",

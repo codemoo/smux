@@ -92,19 +92,21 @@ function setTmuxOption(args: string[]): void {
 
 function applyStatusLine(targetArgs: string[]): void {
   setTmuxOption(["set-option", ...targetArgs, "status", "on"]);
-  setTmuxOption(["set-option", ...targetArgs, "status-left-length", "80"]);
+  setTmuxOption(["set-option", ...targetArgs, "status-position", "bottom"]);
+  setTmuxOption(["set-option", ...targetArgs, "status-style", "bg=green,fg=black"]);
+  setTmuxOption(["set-option", ...targetArgs, "status-left-length", "120"]);
   setTmuxOption(["set-option", ...targetArgs, "status-right-length", "160"]);
   setTmuxOption([
     "set-option",
     ...targetArgs,
     "status-left",
-    "#[bg=green,fg=black,bold] smux #[default] #[fg=green,bold]#S #[default]"
+    "#[bg=green,fg=black,bold] smux #[bg=green,fg=black] #S #[bg=green,fg=black,bold]  detach C-b d -> smux dashboard #[default]"
   ]);
   setTmuxOption([
     "set-option",
     ...targetArgs,
     "status-right",
-    "#[fg=green,bold]detach: C-b d#[default] #[fg=colour240]|#[default] #[fg=colour244]#{pane_current_path} #[fg=colour240]|#[default] %H:%M "
+    "#[bg=green,fg=black] scroll C-b [ | #{pane_current_path} | %H:%M "
   ]);
 }
 
