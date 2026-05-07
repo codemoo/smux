@@ -147,10 +147,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
           continue;
         }
         screen.stop();
-        await newCommand(context, {
-          ...result,
-          cwd: process.cwd()
-        });
+        await newCommand(context, result);
         return;
       }
 

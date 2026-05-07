@@ -23,6 +23,7 @@ import { gitLabel, kindBadge, kindLabel, statusBadge, statusLabel } from "./ui.j
 interface NewSessionFormState {
   step: number;
   name: string;
+  cwd: string;
   objective: string;
   kind: "claude" | "codex" | "shell";
   tags: string;
@@ -40,6 +41,16 @@ function shortenPath(path: string): string {
   }
   const rel = relative(process.cwd(), path);
   return rel && !rel.startsWith("..") ? rel : path;
+}
+
+function displayPath(path: string): string {
+  if (!path) {
+    return ".";
+  }
+  if (path.startsWith("/") || path.startsWith("~")) {
+    return shortenPath(path);
+  }
+  return path;
 }
 
 function timeLabel(value?: string): string {
@@ -471,7 +482,7 @@ function formatDashboardWide(options: {
   const height = terminalHeight();
   const leftWidth = Math.max(48, Math.floor(width * 0.58));
   const rightWidth = width - leftWidth - 2;
-  const fixedRows = 5 + (options.message ? 1 : 0);
+  const fixedRows = 6;
   const panelHeight = Math.max(4, height - fixedRows);
 
   const left = boxLines(
@@ -500,12 +511,12 @@ function formatDashboardWide(options: {
     filter: options.filter,
     config: options.config
   });
-  const notice = options.message ? `${style.yellow("notice")} ${options.message}` : "";
+  const notice = options.message ? `${solid("notice", "yellow")} ${options.message}` : "";
 
   return [
     header,
     subheader,
-    ...(notice ? [fillLine(notice, width)] : []),
+    fillLine(notice, width),
     "",
     ...joinColumns(left, right),
     "",
@@ -531,8 +542,8 @@ function formatDashboardStacked(options: {
     filter: options.filter,
     config: options.config
   });
-  const notice = options.message ? `${style.yellow("notice")} ${options.message}` : "";
-  const fixedRows = 6 + (notice ? 1 : 0);
+  const notice = options.message ? `${solid("notice", "yellow")} ${options.message}` : "";
+  const fixedRows = 7;
   const remaining = Math.max(4, height - fixedRows);
   const showDetails = remaining >= 8;
   const listHeight = showDetails ? Math.max(4, Math.floor(remaining * 0.55)) : remaining;
@@ -562,7 +573,7 @@ function formatDashboardStacked(options: {
   return [
     header,
     subheader,
-    ...(notice ? [fillLine(notice, width)] : []),
+    fillLine(notice, width),
     "",
     ...list,
     ...(showDetails ? ["", ...details] : []),
@@ -601,10 +612,10 @@ export function formatDashboardHelp(): string {
   ], terminalWidth(), Math.max(6, terminalHeight() - 1)).join("\n");
 }
 
-function inputLine(label: string, value: string, active: boolean, hint?: string): string {
+function inputLine(label: string, value: string, active: boolean, hint?: string, suggestion?: string): string {
   const marker = active ? style.cyan("┃") : style.gray("│");
   const renderedValue = active
-    ? solid(` ${value || " "} `, "cyan")
+    ? `${solid(` ${value || " "} `, "cyan")}${suggestion ? style.dim(suggestion) : ""}`
     : style.bold(value || style.gray("-"));
   const suffix = hint ? ` ${style.dim(hint)}` : "";
   return `${marker} ${padEndVisible(active ? style.white(style.bold(label)) : style.gray(label), 18)} ${renderedValue}${suffix}`;
@@ -651,10 +662,15 @@ function formTopBar(width: number, activeCount: number, config: SmuxConfig): str
 }
 
 function formStepLine(step: number): string {
-  const labels = ["name", "agent", "resume", "objective", "tags", "start"];
-  return labels
+  return formSteps
     .map((label, index) => (index === step ? solid(`${index + 1} ${label}`, "cyan") : style.gray(`${index + 1} ${label}`)))
     .join(style.gray("  "));
+}
+
+const formSteps = ["name", "cwd", "agent", "resume", "objective", "tags", "start"] as const;
+
+function formStepTitle(step: number): string {
+  return `${style.bold("Create session")} ${style.gray(`step ${step + 1}/${formSteps.length}`)}`;
 }
 
 function startupPreview(state: NewSessionFormState): string {
@@ -682,7 +698,7 @@ function fitFormBody(
   const previous = fieldRows[state.step - 1];
   const next = fieldRows[state.step + 1];
   const compact = [
-    `${style.bold("Create session")} ${style.gray(`step ${state.step + 1}/6`)}`,
+    formStepTitle(state.step),
     formStepLine(state.step),
     "",
     previous ? style.dim(previous) : field("cwd", shortenPath(cwd)),
@@ -697,6 +713,7 @@ function fitFormBody(
 export function formatNewSessionForm(options: {
   state: NewSessionFormState;
   cwd: string;
+  cwdSuggestion?: string;
   activeCount: number;
   config: SmuxConfig;
 }): string {
@@ -707,14 +724,14 @@ export function formatNewSessionForm(options: {
   const formWidth = Math.min(width, Math.max(60, Math.min(96, width - 4)));
   const leftPad = Math.max(0, Math.floor((width - formWidth) / 2));
   const spacer = " ".repeat(leftPad);
-  const kindLine = `${state.step === 1 ? style.cyan("›") : " "} ${padEndVisible("agent", 18)} ${segmentedKind(state.kind, state.step === 1)} ${style.dim("left/right or hotkey")}`;
+  const kindLine = `${state.step === 2 ? style.cyan("›") : " "} ${padEndVisible("agent", 18)} ${segmentedKind(state.kind, state.step === 2)} ${style.dim("left/right or hotkey")}`;
   const canResume = state.kind !== "shell";
   const resumeHint = state.kind === "codex"
     ? "starts codex resume"
     : state.kind === "claude"
       ? "starts claude -r"
       : "agent sessions only";
-  const resumeLine = checkboxLine("resume previous", state.resume, state.step === 2, canResume, resumeHint);
+  const resumeLine = checkboxLine("resume previous", state.resume, state.step === 3, canResume, resumeHint);
   const canSendObjective = state.kind !== "shell" && !state.resume && state.objective.trim().length > 0;
   const sendValue = !canSendObjective
     ? style.gray("disabled")
@@ -726,31 +743,32 @@ export function formatNewSessionForm(options: {
     : canSendObjective
       ? "space toggles"
       : "requires agent objective";
-  const sendLine = `${state.step === 5 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
+  const sendLine = `${state.step === 6 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
   const fieldRows = [
     inputLine("name", state.name, state.step === 0, "editable"),
+    inputLine("cwd", state.cwd, state.step === 1, options.cwdSuggestion ? "tab completes" : "editable path", options.cwdSuggestion),
     kindLine,
     resumeLine,
-    inputLine("objective", state.objective, state.step === 3, "optional"),
-    inputLine("tags", state.tags, state.step === 4, "comma separated"),
+    inputLine("objective", state.objective, state.step === 4, "optional"),
+    inputLine("tags", state.tags, state.step === 5, "comma separated"),
     sendLine
   ];
   const body = [
-    `${style.bold("Create session")} ${style.gray(`step ${state.step + 1}/6`)}`,
+    formStepTitle(state.step),
     formStepLine(state.step),
-    field("cwd", shortenPath(options.cwd)),
+    field("launch", displayPath(state.cwd || options.cwd)),
     field("startup", startupPreview(state)),
     "",
     ...fieldRows,
     "",
     style.dim("Enter next/confirm  ·  Up/Down move  ·  Esc cancel")
   ];
-  const boxHeight = Math.max(7, Math.min(24, height - 4));
+  const boxHeight = Math.max(7, height - 4);
   const visibleBody = fitFormBody(body, fieldRows, state, options.cwd, boxHeight - 2);
   const rows = boxLines("new session", visibleBody, formWidth, boxHeight).map((line) => `${spacer}${line}`);
   const footerText = width < 64
-    ? " enter next   ↑/↓ move   esc cancel"
-    : " enter next/confirm   ↑/↓ move   ←/→ agent   space toggle   esc cancel";
+    ? " enter next   tab complete   esc cancel"
+    : " enter next/confirm   tab complete/move   ↑/↓ move   ←/→ agent   space toggle   esc cancel";
   const footer = style.inverse(fillLine(footerText, width));
 
   return [header, "", ...rows, "", footer].join("\n");
@@ -801,7 +819,8 @@ export function formatHelp(): string {
     `  ${style.bold("smux")}                                      ${style.dim("open the session dashboard")}`,
     `  ${style.bold("smux list")} [--view recent|path|kind|waiting] ${style.dim("show sessions")}`,
     `  ${style.bold("smux new")} [--kind codex|claude|shell]       ${style.dim("create a session")}`,
-    `            [--name NAME] [--objective TEXT] [--resume] [--send-objective]`,
+    `            [--name NAME] [--cwd DIR] [--objective TEXT] [--resume]`,
+    `            [--send-objective]`,
     `            [--history-limit N] [--mouse|--no-mouse]`,
     `  ${style.bold("smux attach")} <name-or-id>                   ${style.dim("attach to tmux")}`,
     `  ${style.bold("smux status")} <name-or-id>                   ${style.dim("inspect without attaching")}`,

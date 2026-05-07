@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { createSessionId } from "../core/id.js";
 import { gitInfo } from "../core/git.js";
 import { effectiveTmuxOptions } from "../core/config.js";
@@ -33,7 +33,7 @@ function uniqueName(base: string, existingNames: Set<string>): string {
 }
 
 export async function newCommand(context: CommandContext, options: NewSessionOptions): Promise<SmuxSession> {
-  const cwd = options.cwd ?? process.cwd();
+  const cwd = resolve(options.cwd ?? process.cwd());
   const kind = options.kind ?? "shell";
   const existingNames = new Set(context.state.sessions.map((session) => session.tmuxSessionName));
   const name = uniqueName(options.name ?? basename(cwd), existingNames);

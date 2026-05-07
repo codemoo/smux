@@ -141,6 +141,7 @@ async function main(): Promise<void> {
       await newCommand(context, {
         name: flagString(parsed.flags, "name"),
         kind: parseKind(flagString(parsed.flags, "kind")),
+        cwd: flagString(parsed.flags, "cwd"),
         objective: flagString(parsed.flags, "objective"),
         tags: flagTag ? [...tags, flagTag] : tags,
         attach: !flagBoolean(parsed.flags, "no-attach"),

@@ -11,6 +11,7 @@ The first implementation target is local-only:
 - use the full current terminal width and height, with responsive redraw on resize
 - navigate with direct keys: `j/k`, arrow keys, `/`, `?`, `enter`
 - create a new session from the current directory
+- edit the launch directory during creation, with child-folder completion
 - choose session kind: `claude`, `codex`, or `shell`
 - start agent sessions fresh or through their resume pickers
 - attach to an existing session
@@ -48,9 +49,11 @@ Resume an agent session picker when creating a new tmux session:
 ```sh
 smux new --kind codex --resume
 smux new --kind claude --resume
+smux new --kind codex --cwd ./packages/api
 ```
 
 `codex` starts with `codex resume`; `claude` starts with `claude -r`. In the full-screen dashboard, press `n` and toggle `resume previous` in the new session form.
+The new session form defaults `cwd` to the current directory. Move to the `cwd` field and press `Tab` to accept the dimmed child-folder completion.
 
 Useful settings:
 

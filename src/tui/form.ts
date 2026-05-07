@@ -1,4 +1,6 @@
-import { basename } from "node:path";
+import { readdirSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import type { CommandContext } from "../commands/context.js";
 import { formatNewSessionForm } from "../core/format.js";
 import { activeSessions } from "../core/resolve.js";
@@ -7,6 +9,7 @@ import { FullScreen, readInput } from "./screen.js";
 
 export interface NewSessionFormResult {
   name: string;
+  cwd: string;
   objective: string;
   kind: SessionKind;
   tags: string[];
@@ -17,6 +20,7 @@ export interface NewSessionFormResult {
 interface FormState {
   step: number;
   name: string;
+  cwd: string;
   objective: string;
   kind: SessionKind;
   tags: string;
@@ -25,17 +29,21 @@ interface FormState {
 }
 
 const STEP_NAME = 0;
-const STEP_KIND = 1;
-const STEP_RESUME = 2;
-const STEP_OBJECTIVE = 3;
-const STEP_TAGS = 4;
-const STEP_SEND = 5;
-const fieldCount = 6;
+const STEP_CWD = 1;
+const STEP_KIND = 2;
+const STEP_RESUME = 3;
+const STEP_OBJECTIVE = 4;
+const STEP_TAGS = 5;
+const STEP_SEND = 6;
+const fieldCount = 7;
 const kinds: SessionKind[] = ["codex", "claude", "shell"];
 
 function currentValue(state: FormState): string {
   if (state.step === STEP_NAME) {
     return state.name;
+  }
+  if (state.step === STEP_CWD) {
+    return state.cwd;
   }
   if (state.step === STEP_OBJECTIVE) {
     return state.objective;
@@ -49,6 +57,9 @@ function currentValue(state: FormState): string {
 function updateCurrentValue(state: FormState, value: string): FormState {
   if (state.step === STEP_NAME) {
     return { ...state, name: value };
+  }
+  if (state.step === STEP_CWD) {
+    return { ...state, cwd: value };
   }
   if (state.step === STEP_OBJECTIVE) {
     return { ...state, objective: value };
@@ -72,11 +83,91 @@ function updateKind(state: FormState, kind: SessionKind): FormState {
   };
 }
 
+interface CwdCompletion {
+  completed: string;
+  suffix: string;
+}
+
+function expandHome(value: string): string {
+  if (value === "~") {
+    return homedir();
+  }
+  if (value.startsWith("~/")) {
+    return join(homedir(), value.slice(2));
+  }
+  return value;
+}
+
+function resolveCwd(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return process.cwd();
+  }
+  const expanded = expandHome(trimmed);
+  return isAbsolute(expanded) ? resolve(expanded) : resolve(process.cwd(), expanded);
+}
+
+function childDirectories(parent: string, prefix: string): string[] {
+  try {
+    return readdirSync(parent, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) => name !== "node_modules")
+      .filter((name) => prefix.startsWith(".") || !name.startsWith("."))
+      .filter((name) => name.startsWith(prefix))
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+function appendChild(value: string, child: string): string {
+  const trimmed = value.trim();
+  const base = trimmed || ".";
+  return `${base.endsWith("/") ? base : `${base}/`}${child}/`;
+}
+
+function replaceLastSegment(value: string, match: string): string {
+  const trimmed = value.trim();
+  const index = trimmed.lastIndexOf("/");
+  if (index === -1) {
+    return `${match}/`;
+  }
+  return `${trimmed.slice(0, index + 1)}${match}/`;
+}
+
+function cwdCompletion(value: string): CwdCompletion | undefined {
+  const trimmed = value.trim();
+  const resolved = resolveCwd(trimmed);
+  const exactChildren = childDirectories(resolved, "");
+  if (exactChildren.length > 0) {
+    const child = exactChildren[0]!;
+    return {
+      completed: appendChild(trimmed, child),
+      suffix: `${trimmed.endsWith("/") ? "" : "/"}${child}/`
+    };
+  }
+
+  const parent = dirname(resolved);
+  const prefix = basename(resolved);
+  const match = childDirectories(parent, prefix)[0];
+  if (!match || match === prefix) {
+    return undefined;
+  }
+
+  return {
+    completed: replaceLastSegment(trimmed, match),
+    suffix: `${match.slice(prefix.length)}/`
+  };
+}
+
 function formResult(state: FormState): NewSessionFormResult {
+  const cwd = resolveCwd(state.cwd);
   const objective = state.objective.trim();
   const resume = state.kind !== "shell" && state.resume;
   return {
-    name: state.name.trim() || basename(process.cwd()),
+    name: state.name.trim() || basename(cwd),
+    cwd,
     objective,
     kind: state.kind,
     tags: state.tags
@@ -95,6 +186,7 @@ export async function runNewSessionForm(
   let state: FormState = {
     step: 0,
     name: basename(process.cwd()),
+    cwd: process.cwd(),
     objective: "",
     kind: "codex",
     tags: "",
@@ -106,6 +198,7 @@ export async function runNewSessionForm(
     screen.draw(formatNewSessionForm({
       state,
       cwd: process.cwd(),
+      cwdSuggestion: state.step === STEP_CWD ? cwdCompletion(state.cwd)?.suffix : undefined,
       activeCount: activeSessions(context.state).length,
       config: context.config
     }));
@@ -123,7 +216,18 @@ export async function runNewSessionForm(
       return undefined;
     }
 
-    if (name === "tab" || name === "down") {
+    if (name === "tab") {
+      if (state.step === STEP_CWD) {
+        const completion = cwdCompletion(state.cwd);
+        if (completion) {
+          state = { ...state, cwd: completion.completed };
+          continue;
+        }
+      }
+      state = { ...state, step: Math.min(fieldCount - 1, state.step + 1) };
+      continue;
+    }
+    if (name === "down") {
       state = { ...state, step: Math.min(fieldCount - 1, state.step + 1) };
       continue;
     }
