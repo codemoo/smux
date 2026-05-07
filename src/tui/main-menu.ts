@@ -5,10 +5,12 @@ import { newCommand } from "../commands/new.js";
 import { sendCommandToSession } from "../commands/send.js";
 import { statusCommand } from "../commands/status.js";
 import { activeSessions } from "../core/resolve.js";
-import { formatList, sortRecent } from "../core/format.js";
+import { formatList, formatShell, sortRecent } from "../core/format.js";
 import type { CommandContext } from "../commands/context.js";
 import type { ListView, SessionKind, SmuxSession } from "../core/types.js";
 import { ask, confirm } from "./prompt.js";
+import { FullScreen } from "./screen.js";
+import { key, style } from "../core/theme.js";
 
 function parseKind(value: string): SessionKind {
   if (value === "claude" || value === "codex" || value === "shell") {
@@ -49,71 +51,89 @@ async function createSessionFlow(context: CommandContext): Promise<void> {
 
 export async function runMainMenu(context: CommandContext): Promise<void> {
   let view: ListView = "recent";
+  const screen = new FullScreen(context.config.fullscreen);
+  screen.start();
 
-  for (;;) {
-    const sessions = sortRecent(activeSessions(context.state));
-    console.log("");
-    console.log(`smux  View: ${view}`);
-    console.log("");
-    console.log(formatList(sessions, view));
-    console.log("");
-    console.log("Commands: number attach | n new | r recent | p path | k kind | s # status | m # send | x # kill | q quit");
-    const input = await ask("smux");
-    const [command, ...rest] = input.split(/\s+/).filter(Boolean);
+  try {
+    for (;;) {
+      const sessions = sortRecent(activeSessions(context.state));
+      screen.draw([
+        formatShell(view, sessions),
+        "",
+        formatList(sessions, view),
+        "",
+        `${key("1-9")} attach  ${key("n")} new  ${key("r")} recent  ${key("p")} path  ${key("k")} kind`,
+        `${key("s #")} status  ${key("m #")} send  ${key("x #")} kill  ${key("q")} quit`,
+        "",
+        style.dim("Tip: smux config set tmux.history-limit 200000")
+      ].join("\n"));
 
-    if (!command || command === "q") {
-      return;
-    }
-    if (command === "r") {
-      view = "recent";
-      continue;
-    }
-    if (command === "p") {
-      view = "path";
-      continue;
-    }
-    if (command === "k") {
-      view = "kind";
-      continue;
-    }
-    if (command === "n") {
-      await createSessionFlow(context);
-      return;
-    }
+      const input = await ask("smux");
+      const [command, ...rest] = input.split(/\s+/).filter(Boolean);
 
-    try {
-      if (/^\d+$/.test(command)) {
-        await attachCommand(context, selectedSession(sessions, command).name);
+      if (!command || command === "q") {
+        return;
+      }
+      if (command === "r") {
+        view = "recent";
+        continue;
+      }
+      if (command === "p") {
+        view = "path";
+        continue;
+      }
+      if (command === "k") {
+        view = "kind";
+        continue;
+      }
+      if (command === "n") {
+        screen.stop();
+        await createSessionFlow(context);
         return;
       }
 
-      const targetToken = rest[0];
-      if (!targetToken) {
-        throw new Error(`Command "${command}" requires a session number.`);
-      }
-      const target = selectedSession(sessions, targetToken);
-
-      if (command === "s") {
-        statusCommand(context, target.name);
-        continue;
-      }
-      if (command === "m") {
-        const message = await ask("Message");
-        if (message && (await confirm(`Send to ${target.name}?`, false))) {
-          sendCommandToSession(context, target.name, message, { allowShell: false });
+      try {
+        if (/^\d+$/.test(command)) {
+          screen.stop();
+          await attachCommand(context, selectedSession(sessions, command).name);
+          return;
         }
-        continue;
-      }
-      if (command === "x") {
-        if (await confirm(`Kill ${target.name}?`, false)) {
-          killCommand(context, target.name);
-        }
-        continue;
-      }
 
-      console.error(`Unknown command "${command}".`);
-    } catch (error) {
-      console.error((error as Error).message);
+        const targetToken = rest[0];
+        if (!targetToken) {
+          throw new Error(`Command "${command}" requires a session number.`);
+        }
+        const target = selectedSession(sessions, targetToken);
+
+        if (command === "s") {
+          statusCommand(context, target.name);
+          await ask("Press Enter");
+          continue;
+        }
+        if (command === "m") {
+          const message = await ask("Message");
+          if (message && (await confirm(`Send to ${target.name}?`, false))) {
+            sendCommandToSession(context, target.name, message, { allowShell: false });
+            await ask("Press Enter");
+          }
+          continue;
+        }
+        if (command === "x") {
+          if (await confirm(`Kill ${target.name}?`, false)) {
+            killCommand(context, target.name);
+            await ask("Press Enter");
+          }
+          continue;
+        }
+
+        console.error(`Unknown command "${command}".`);
+        await ask("Press Enter");
+      } catch (error) {
+        console.error(style.red((error as Error).message));
+        await ask("Press Enter");
+      }
     }
+  } finally {
+    screen.stop();
   }
 }

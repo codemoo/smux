@@ -7,6 +7,7 @@ The npm package name is `smux-ai`; the installed binary is `smux`.
 The first implementation target is local-only:
 
 - list existing local `tmux` sessions by recent use, path, or agent kind
+- use a full-screen terminal dashboard by default
 - create a new session from the current directory
 - choose session kind: `claude`, `codex`, or `shell`
 - attach to an existing session
@@ -15,6 +16,7 @@ The first implementation target is local-only:
 - track each agent session's objective, tags, git branch, and lightweight status
 - inspect an agent session without attaching
 - send a short confirmed message to an agent session from outside tmux
+- set tmux scrollback/mouse defaults globally or per session
 
 The first version is intentionally local-only. Remote tmux hosts come later.
 
@@ -36,4 +38,14 @@ The project is focused on managing AI-agent terminal sessions on top of `tmux`: 
 npm install
 npm run build
 npm run smux -- list
+```
+
+Useful settings:
+
+```sh
+smux config
+smux config set tmux.history-limit 200000
+smux config set tmux.mouse on
+smux config set fullscreen on
+smux set my-session tmux.history-limit 300000
 ```

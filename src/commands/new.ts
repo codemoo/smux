@@ -1,9 +1,10 @@
 import { basename } from "node:path";
 import { createSessionId } from "../core/id.js";
 import { gitInfo } from "../core/git.js";
-import { createTmuxSession, sendCommand, attachTmuxSession } from "../core/tmux.js";
+import { effectiveTmuxOptions } from "../core/config.js";
+import { createTmuxSession, sendCommand, attachTmuxSession, applyTmuxOptions } from "../core/tmux.js";
 import { upsertSession } from "../core/store.js";
-import type { SessionKind, SmuxSession } from "../core/types.js";
+import type { SessionKind, SmuxSession, TmuxOptions } from "../core/types.js";
 import type { CommandContext } from "./context.js";
 
 export interface NewSessionOptions {
@@ -14,6 +15,7 @@ export interface NewSessionOptions {
   cwd?: string;
   attach?: boolean;
   sendObjective?: boolean;
+  tmux?: TmuxOptions;
 }
 
 function uniqueName(base: string, existingNames: Set<string>): string {
@@ -37,6 +39,7 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   const id = createSessionId();
   const now = new Date().toISOString();
   const git = gitInfo(cwd);
+  const tmuxOptions = effectiveTmuxOptions(context.config, options.tmux);
 
   createTmuxSession({
     name,
@@ -44,6 +47,7 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     smuxSessionId: id,
     kind
   });
+  applyTmuxOptions(name, tmuxOptions);
 
   if (kind !== "shell") {
     sendCommand(name, kind);
@@ -64,6 +68,7 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     gitBranch: git.branch,
     gitDirty: git.dirty,
     tmuxSessionName: name,
+    tmux: options.tmux,
     status: "detached",
     notes: [],
     createdAt: now,

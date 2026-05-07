@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { attachCommand } from "./commands/attach.js";
+import { setConfigCommand, setSessionConfigCommand, showConfigCommand } from "./commands/config.js";
 import { loadContext } from "./commands/context.js";
 import { killCommand } from "./commands/kill.js";
 import { listCommand } from "./commands/list.js";
@@ -9,8 +10,9 @@ import { renameCommand } from "./commands/rename.js";
 import { sendCommandToSession } from "./commands/send.js";
 import { statusCommand } from "./commands/status.js";
 import { tagCommand } from "./commands/tag.js";
-import { ensureTmuxAvailable } from "./core/tmux.js";
-import type { ListView, SessionKind } from "./core/types.js";
+import { applyTmuxOptions, ensureTmuxAvailable } from "./core/tmux.js";
+import { formatHelp } from "./core/format.js";
+import type { ListView, SessionKind, TmuxOptions } from "./core/types.js";
 import { confirm } from "./tui/prompt.js";
 import { runMainMenu } from "./tui/main-menu.js";
 
@@ -79,23 +81,33 @@ function parseView(value?: string): ListView {
 }
 
 function usage(): string {
-  return [
-    "smux",
-    "",
-    "Usage:",
-    "  smux",
-    "  smux list [--view recent|path|kind]",
-    "  smux new [--name NAME] [--kind claude|codex|shell] [--objective TEXT] [--tag TAG] [--no-attach]",
-    "  smux attach <name-or-id>",
-    "  smux status <name-or-id>",
-    "  smux send <name-or-id> <message> [--yes] [--allow-shell]",
-    "  smux note <name-or-id> <text>",
-    "  smux tag <name-or-id> <tag...>",
-    "  smux rename <new-name> [name-or-id]",
-    "  smux kill <name-or-id>",
-    "",
-    "Package: smux-ai, binary: smux"
-  ].join("\n");
+  return formatHelp();
+}
+
+function parseTmuxFlags(flags: Map<string, string | boolean>): TmuxOptions | undefined {
+  const options: TmuxOptions = {};
+  const historyLimit = flagString(flags, "history-limit");
+  if (historyLimit !== undefined) {
+    const parsed = Number(historyLimit);
+    if (!Number.isInteger(parsed) || parsed < 2_000) {
+      throw new Error("--history-limit must be an integer >= 2000.");
+    }
+    options.historyLimit = parsed;
+  }
+  if (flagBoolean(flags, "mouse")) {
+    options.mouse = true;
+  }
+  if (flagBoolean(flags, "no-mouse")) {
+    options.mouse = false;
+  }
+  const modeKeys = flagString(flags, "mode-keys");
+  if (modeKeys !== undefined) {
+    if (modeKeys !== "vi" && modeKeys !== "emacs") {
+      throw new Error("--mode-keys must be vi or emacs.");
+    }
+    options.modeKeys = modeKeys;
+  }
+  return Object.keys(options).length > 0 ? options : undefined;
 }
 
 async function main(): Promise<void> {
@@ -109,6 +121,7 @@ async function main(): Promise<void> {
 
   ensureTmuxAvailable();
   const context = loadContext();
+  applyTmuxOptions(undefined, context.config.tmux);
 
   if (!command) {
     await runMainMenu(context);
@@ -131,7 +144,8 @@ async function main(): Promise<void> {
         objective: flagString(parsed.flags, "objective"),
         tags: flagTag ? [...tags, flagTag] : tags,
         attach: !flagBoolean(parsed.flags, "no-attach"),
-        sendObjective: flagBoolean(parsed.flags, "send-objective")
+        sendObjective: flagBoolean(parsed.flags, "send-objective"),
+        tmux: parseTmuxFlags(parsed.flags)
       });
       return;
     }
@@ -185,6 +199,27 @@ async function main(): Promise<void> {
         throw new Error("rename requires a new name.");
       }
       renameCommand(context, rest[0], rest[1]);
+      return;
+
+    case "config":
+      if (!rest[0]) {
+        showConfigCommand(context);
+        return;
+      }
+      if (rest[0] === "set") {
+        if (!rest[1] || !rest[2]) {
+          throw new Error("config set requires a key and value.");
+        }
+        setConfigCommand(context, rest[1], rest[2]);
+        return;
+      }
+      throw new Error(`Unknown config command "${rest[0]}".`);
+
+    case "set":
+      if (!rest[0] || !rest[1] || !rest[2]) {
+        throw new Error("set requires a session, key, and value.");
+      }
+      setSessionConfigCommand(context, rest[0], rest[1], rest[2]);
       return;
 
     case "kill":

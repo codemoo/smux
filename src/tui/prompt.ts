@@ -1,11 +1,12 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { style } from "../core/theme.js";
 
 export async function ask(question: string, defaultValue?: string): Promise<string> {
   const rl = createInterface({ input, output });
   try {
     const suffix = defaultValue ? ` (${defaultValue})` : "";
-    const answer = await rl.question(`${question}${suffix}: `);
+    const answer = await rl.question(`${style.cyan("?")} ${style.bold(question)}${style.dim(suffix)}: `);
     return answer.trim() || defaultValue || "";
   } finally {
     rl.close();

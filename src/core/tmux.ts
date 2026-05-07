@@ -1,5 +1,5 @@
 import { run, runChecked, runInherit } from "./process.js";
-import type { SessionKind, TmuxSession } from "./types.js";
+import type { SessionKind, TmuxOptions, TmuxSession } from "./types.js";
 
 const SESSION_FORMAT = [
   "#{session_id}",
@@ -84,6 +84,20 @@ export function pasteMessage(target: string, message: string): void {
   runChecked("tmux", ["set-buffer", message]);
   runChecked("tmux", ["paste-buffer", "-t", target]);
   runChecked("tmux", ["send-keys", "-t", target, "C-m"]);
+}
+
+function setTmuxOption(args: string[]): void {
+  run("tmux", args);
+}
+
+export function applyTmuxOptions(target: string | undefined, options: Required<TmuxOptions>): void {
+  const targetArgs = target ? ["-t", target] : ["-g"];
+  const history = String(options.historyLimit);
+  const mouse = options.mouse ? "on" : "off";
+
+  setTmuxOption(["set-option", ...targetArgs, "mouse", mouse]);
+  setTmuxOption(["set-window-option", ...targetArgs, "history-limit", history]);
+  setTmuxOption(["set-window-option", ...targetArgs, "mode-keys", options.modeKeys]);
 }
 
 export function capturePreview(target: string, lines = 30): string {

@@ -13,6 +13,18 @@ export interface SmuxNote {
   createdAt: string;
 }
 
+export interface TmuxOptions {
+  historyLimit?: number;
+  mouse?: boolean;
+  modeKeys?: "vi" | "emacs";
+}
+
+export interface SmuxConfig {
+  version: 1;
+  fullscreen: boolean;
+  tmux: Required<TmuxOptions>;
+}
+
 export interface SmuxSession {
   id: string;
   name: string;
@@ -26,6 +38,7 @@ export interface SmuxSession {
   gitDirty?: boolean;
   tmuxSessionId?: string;
   tmuxSessionName: string;
+  tmux?: TmuxOptions;
   status: "attached" | "detached" | "missing" | "terminated";
   lastPreview?: string;
   notes: SmuxNote[];
