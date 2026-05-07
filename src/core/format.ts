@@ -388,7 +388,7 @@ function topBar(options: {
   const padding = Math.max(1, options.width - visibleLength(line) - visibleLength(right));
   return [
     style.inverse(`${line}${" ".repeat(padding)}${right}`),
-    `${formatTabs(options.view)}  ${counts(options.sessions)}`
+    fillLine(`${formatTabs(options.view)}  ${counts(options.sessions)}`, options.width)
   ];
 }
 
@@ -405,7 +405,8 @@ function formatDashboardWide(options: {
   const height = terminalHeight();
   const leftWidth = Math.max(48, Math.floor(width * 0.58));
   const rightWidth = width - leftWidth - 2;
-  const panelHeight = Math.max(12, height - 8);
+  const fixedRows = 5 + (options.message ? 1 : 0);
+  const panelHeight = Math.max(4, height - fixedRows);
 
   const left = boxLines(
     `sessions ${options.sessions.length}/${options.allSessions.length}`,
@@ -438,9 +439,65 @@ function formatDashboardWide(options: {
   return [
     header,
     subheader,
-    notice,
+    ...(notice ? [fillLine(notice, width)] : []),
     "",
     ...joinColumns(left, right),
+    "",
+    commandBar(width)
+  ].join("\n");
+}
+
+function formatDashboardStacked(options: {
+  view: ListView;
+  sessions: SmuxSession[];
+  allSessions: SmuxSession[];
+  selected?: SmuxSession;
+  filter: string;
+  config: SmuxConfig;
+  message?: string;
+}): string {
+  const width = terminalWidth();
+  const height = terminalHeight();
+  const [header, subheader] = topBar({
+    width,
+    view: options.view,
+    sessions: options.allSessions,
+    filter: options.filter,
+    config: options.config
+  });
+  const notice = options.message ? `${style.yellow("notice")} ${options.message}` : "";
+  const fixedRows = 6 + (notice ? 1 : 0);
+  const remaining = Math.max(4, height - fixedRows);
+  const listHeight = Math.max(4, Math.floor(remaining * 0.55));
+  const detailHeight = Math.max(4, remaining - listHeight);
+
+  const list = boxLines(
+    `sessions ${options.sessions.length}/${options.allSessions.length}`,
+    dashboardSessionRows({
+      sessions: options.sessions,
+      selected: options.selected,
+      width: width - 4,
+      height: listHeight - 2,
+      filter: options.filter
+    }),
+    width,
+    listHeight
+  );
+  const details = boxLines(
+    options.selected ? `details ${options.selected.name}` : "details",
+    detailRows(options.selected, width - 4),
+    width,
+    detailHeight
+  );
+
+  return [
+    header,
+    subheader,
+    ...(notice ? [fillLine(notice, width)] : []),
+    "",
+    ...list,
+    "",
+    ...details,
     "",
     commandBar(width)
   ].join("\n");
@@ -459,20 +516,7 @@ export function formatDashboard(options: {
     return formatDashboardWide(options);
   }
 
-  return [
-    formatShell(options.view, options.allSessions, options.filter, options.config),
-    counts(options.allSessions),
-    "",
-    formatTabs(options.view),
-    options.message ? `${style.yellow("notice")} ${options.message}` : "",
-    "",
-    formatList(options.sessions, options.view, options.selected?.id, options.filter),
-    "",
-    formatFocus(options.selected),
-    "",
-    `${key("↑/↓ j/k")} move  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help`,
-    `${key("s")} status  ${key("m")} send  ${key("x")} kill  ${key("esc")} clear  ${key("q")} quit`
-  ].filter((line) => line !== "").join("\n");
+  return formatDashboardStacked(options);
 }
 
 export function formatDashboardHelp(): string {

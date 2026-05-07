@@ -9,6 +9,15 @@ export interface KeyInput {
   shift?: boolean;
 }
 
+export type ScreenInput =
+  | {
+      type: "key";
+      key: KeyInput;
+    }
+  | {
+      type: "resize";
+    };
+
 function setRawMode(enabled: boolean): void {
   if (stdin.isTTY && typeof stdin.setRawMode === "function") {
     stdin.setRawMode(enabled);
@@ -60,16 +69,34 @@ export class FullScreen {
   }
 }
 
-export function readKey(): Promise<KeyInput> {
+export function readInput(): Promise<ScreenInput> {
   emitKeypressEvents(stdin);
   setRawMode(true);
   stdin.resume();
 
   return new Promise((resolve) => {
     const handler = (_value: string, key: KeyInput) => {
+      cleanup();
+      resolve({ type: "key", key });
+    };
+    const resizeHandler = () => {
+      cleanup();
+      resolve({ type: "resize" });
+    };
+    const cleanup = () => {
       stdin.off("keypress", handler);
-      resolve(key);
+      stdout.off("resize", resizeHandler);
     };
     stdin.on("keypress", handler);
+    stdout.on("resize", resizeHandler);
   });
+}
+
+export async function readKey(): Promise<KeyInput> {
+  for (;;) {
+    const input = await readInput();
+    if (input.type === "key") {
+      return input.key;
+    }
+  }
 }

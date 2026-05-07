@@ -49,11 +49,11 @@ export function padEndVisible(value: string, width: number): string {
 }
 
 export function terminalWidth(): number {
-  return Math.min(Math.max(stdout.columns ?? 100, 72), 140);
+  return Math.max(stdout.columns ?? 100, 20);
 }
 
 export function terminalHeight(): number {
-  return Math.min(Math.max(stdout.rows ?? 32, 20), 60);
+  return Math.max(stdout.rows ?? 32, 12);
 }
 
 export function key(value: string): string {
@@ -78,13 +78,13 @@ export function fillLine(value: string, width = terminalWidth()): string {
 }
 
 export function boxLines(title: string, body: string[], width: number, height?: number): string[] {
-  const safeWidth = Math.max(24, width);
-  const innerWidth = safeWidth - 4;
+  const safeWidth = Math.max(10, width);
+  const innerWidth = Math.max(1, safeWidth - 4);
   const chars = ascii
     ? { tl: "+", tr: "+", bl: "+", br: "+", h: "-", v: "|" }
     : { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" };
 
-  const titleText = ` ${truncate(title, safeWidth - 6)} `;
+  const titleText = ` ${truncate(title, Math.max(1, safeWidth - 6))} `;
   const topRule = `${chars.tl}${titleText}${chars.h.repeat(Math.max(0, safeWidth - 2 - visibleLength(titleText)))}${chars.tr}`;
   const bottomRule = `${chars.bl}${chars.h.repeat(safeWidth - 2)}${chars.br}`;
   const rawRows = body.flatMap((line) => line.split("\n"));
@@ -115,5 +115,5 @@ export function joinColumns(left: string[], right: string[], gap = 2): string[] 
 }
 
 export function box(title: string, body: string[]): string {
-  return boxLines(title, body, Math.min(terminalWidth(), 100)).join("\n");
+  return boxLines(title, body, terminalWidth()).join("\n");
 }

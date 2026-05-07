@@ -8,6 +8,7 @@ The first implementation target is local-only:
 
 - list existing local `tmux` sessions by recent use, path, or agent kind
 - use a full-screen two-pane terminal dashboard by default
+- use the full current terminal width and height, with responsive redraw on resize
 - navigate with direct keys: `j/k`, arrow keys, `/`, `?`, `enter`
 - create a new session from the current directory
 - choose session kind: `claude`, `codex`, or `shell`
@@ -66,4 +67,4 @@ x              kill session
 q              quit
 ```
 
-The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. This is the primary interface; subcommands remain available for scripting.
+The dashboard uses a statusline, view tabs, a selectable session panel, and a detail panel for the currently selected session. It expands to the current terminal size and redraws when the terminal is resized. This is the primary interface; subcommands remain available for scripting.

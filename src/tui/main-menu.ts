@@ -8,7 +8,7 @@ import { formatDashboard, formatDashboardHelp, formatStatus, sortRecent } from "
 import type { CommandContext } from "../commands/context.js";
 import type { ListView, SessionKind, SmuxSession } from "../core/types.js";
 import { ask, confirm } from "./prompt.js";
-import { FullScreen, readKey } from "./screen.js";
+import { FullScreen, readInput } from "./screen.js";
 import { style } from "../core/theme.js";
 
 function parseKind(value: string): SessionKind {
@@ -67,6 +67,16 @@ async function createSessionFlow(context: CommandContext): Promise<void> {
   });
 }
 
+async function showOverlay(screen: FullScreen, render: () => string): Promise<void> {
+  for (;;) {
+    screen.draw(`${render()}\n\n${style.dim("Press any key to return")}`);
+    const input = await readInput();
+    if (input.type === "key") {
+      return;
+    }
+  }
+}
+
 export async function runMainMenu(context: CommandContext): Promise<void> {
   let view: ListView = "recent";
   let filter = "";
@@ -93,11 +103,15 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
       }));
       message = undefined;
 
-      const input = await readKey();
-      const name = input.name;
-      const sequence = input.sequence;
+      const input = await readInput();
+      if (input.type === "resize") {
+        continue;
+      }
+      const key = input.key;
+      const name = key.name;
+      const sequence = key.sequence;
 
-      if (input.ctrl && name === "c") {
+      if (key.ctrl && name === "c") {
         return;
       }
       if (name === "q" || sequence === "q") {
@@ -144,8 +158,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         continue;
       }
       if (sequence === "?") {
-        screen.draw(`${formatDashboardHelp()}\n\n${style.dim("Press any key to return")}`);
-        await readKey();
+        await showOverlay(screen, formatDashboardHelp);
         continue;
       }
       if (sequence === "/") {
@@ -187,8 +200,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         }
 
         if (sequence === "s") {
-          screen.draw(`${formatStatus(target)}\n\n${style.dim("Press any key to return")}`);
-          await readKey();
+          await showOverlay(screen, () => formatStatus(target));
           continue;
         }
         if (sequence === "m") {
