@@ -2,7 +2,7 @@
 import { attachCommand } from "./commands/attach.js";
 import { setConfigCommand, setSessionConfigCommand, showConfigCommand } from "./commands/config.js";
 import { loadContext } from "./commands/context.js";
-import { killCommand } from "./commands/kill.js";
+import { killAllCommand, killCommand } from "./commands/kill.js";
 import { listCommand } from "./commands/list.js";
 import { newCommand } from "./commands/new.js";
 import { noteCommand } from "./commands/note.js";
@@ -12,6 +12,7 @@ import { statusCommand } from "./commands/status.js";
 import { tagCommand } from "./commands/tag.js";
 import { applyTmuxOptions, ensureTmuxAvailable } from "./core/tmux.js";
 import { formatHelp } from "./core/format.js";
+import { activeSessions } from "./core/resolve.js";
 import type { ListView, SessionKind, TmuxOptions } from "./core/types.js";
 import { confirm } from "./tui/prompt.js";
 import { runMainMenu } from "./tui/main-menu.js";
@@ -233,6 +234,19 @@ async function main(): Promise<void> {
       }
       killCommand(context, rest[0]);
       return;
+
+    case "killall": {
+      const count = activeSessions(context.state).length;
+      if (count === 0) {
+        console.log("No active sessions to kill.");
+        return;
+      }
+      if (!flagBoolean(parsed.flags, "yes") && !(await confirm(`Kill all ${count} active sessions?`, false))) {
+        return;
+      }
+      killAllCommand(context);
+      return;
+    }
 
     default:
       throw new Error(`Unknown command "${command}".\n\n${usage()}`);

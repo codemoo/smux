@@ -738,6 +738,7 @@ export function formatHelp(): string {
     `  ${style.bold("smux config set")} <key> <value>              ${style.dim("set global defaults")}`,
     `  ${style.bold("smux set")} <session> <key> <value>           ${style.dim("set a session override")}`,
     `  ${style.bold("smux kill")} <name-or-id>                     ${style.dim("terminate a session")}`,
+    `  ${style.bold("smux killall")} [--yes]                        ${style.dim("terminate all active sessions")}`,
     "",
     sectionTitle("views"),
     `  ${key("r")} recent   ${key("p")} path   ${key("a")} agent   ${key("w")} waiting`,

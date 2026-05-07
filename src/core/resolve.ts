@@ -1,8 +1,12 @@
 import type { SmuxSession, SmuxState } from "./types.js";
 
+function hasSessionTarget(session: SmuxSession): boolean {
+  return Boolean(session.name && (session.tmuxSessionId || session.tmuxSessionName));
+}
+
 export function activeSessions(state: SmuxState): SmuxSession[] {
   return state.sessions.filter(
-    (session) => session.status !== "terminated" && session.status !== "missing"
+    (session) => hasSessionTarget(session) && session.status !== "terminated" && session.status !== "missing"
   );
 }
 

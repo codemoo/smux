@@ -20,6 +20,7 @@ The first implementation target is local-only:
 - track each agent session's objective, tags, git branch, and lightweight status
 - inspect an agent session without attaching
 - send a short confirmed message to an agent session from outside tmux
+- kill one session or all active sessions after confirmation
 - set tmux scrollback/mouse defaults globally or per session
 - show `detach C-b d -> smux dashboard` in the tmux statusline while attached
 
@@ -64,6 +65,7 @@ smux config set tmux.history-limit 200000
 smux config set tmux.mouse on
 smux config set fullscreen on
 smux set my-session tmux.history-limit 300000
+smux killall --yes
 ```
 
 Dashboard keys:
