@@ -44,7 +44,7 @@ export class FullScreen {
       console.log(content);
       return;
     }
-    stdout.write(`\u001b[2J\u001b[H${content}\n`);
+    stdout.write(`\u001b[2J\u001b[H${content}`);
   }
 
   stop(): void {

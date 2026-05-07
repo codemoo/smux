@@ -582,6 +582,70 @@ function formatDashboardStacked(options: {
   ].join("\n");
 }
 
+function fitScreenRows(rows: string[], width: number, height: number): string {
+  const fitted = rows.slice(0, height).map((line) => fillLine(line, width));
+  while (fitted.length < height) {
+    fitted.push(fillLine("", width));
+  }
+  return fitted.join("\n");
+}
+
+function formatDashboardStable(options: {
+  view: ListView;
+  sessions: SmuxSession[];
+  allSessions: SmuxSession[];
+  selected?: SmuxSession;
+  filter: string;
+  config: SmuxConfig;
+  message?: string;
+}): string {
+  const width = terminalWidth();
+  const height = terminalHeight();
+  const [header, subheader] = topBar({
+    width,
+    view: options.view,
+    sessions: options.allSessions,
+    filter: options.filter,
+    config: options.config
+  });
+  const notice = options.message ? `${solid("notice", "yellow")} ${options.message}` : "";
+  const command = commandBar(width);
+  const available = Math.max(4, height - 4);
+  const showDetails = Boolean(options.selected) && available >= 10;
+  const detailHeight = showDetails ? Math.min(10, Math.max(5, Math.floor(available * 0.35))) : 0;
+  const listHeight = Math.max(4, available - detailHeight);
+
+  const list = boxLines(
+    `${style.cyan("sessions")} ${options.sessions.length}/${options.allSessions.length}`,
+    dashboardSessionRows({
+      sessions: options.sessions,
+      selected: options.selected,
+      width: width - 4,
+      height: listHeight - 2,
+      filter: options.filter
+    }),
+    width,
+    listHeight
+  );
+  const details = detailHeight > 0
+    ? boxLines(
+        options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
+        detailRows(options.selected, width - 4),
+        width,
+        detailHeight
+      )
+    : [];
+
+  return fitScreenRows([
+    header,
+    subheader,
+    fillLine(notice, width),
+    ...list,
+    ...details,
+    command
+  ], width, height);
+}
+
 export function formatDashboard(options: {
   view: ListView;
   sessions: SmuxSession[];
@@ -591,11 +655,7 @@ export function formatDashboard(options: {
   config: SmuxConfig;
   message?: string;
 }): string {
-  if (terminalWidth() >= 104) {
-    return formatDashboardWide(options);
-  }
-
-  return formatDashboardStacked(options);
+  return formatDashboardStable(options);
 }
 
 export function formatDashboardHelp(): string {
