@@ -15,6 +15,7 @@ export interface NewSessionOptions {
   cwd?: string;
   attach?: boolean;
   sendObjective?: boolean;
+  resume?: boolean;
   tmux?: TmuxOptions;
 }
 
@@ -40,6 +41,7 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   const now = new Date().toISOString();
   const git = gitInfo(cwd);
   const tmuxOptions = effectiveTmuxOptions(context.config, options.tmux);
+  const resume = options.resume === true && kind !== "shell";
 
   createTmuxSession({
     name,
@@ -50,8 +52,8 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   applyTmuxOptions(name, tmuxOptions);
 
   if (kind !== "shell") {
-    sendCommand(name, kind);
-    if (options.objective && options.sendObjective) {
+    sendCommand(name, agentCommand(kind, resume));
+    if (!resume && options.objective && options.sendObjective) {
       sendCommand(name, options.objective);
     }
   }
@@ -62,6 +64,7 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     kind,
     objective: options.objective ?? "",
     tags: options.tags ?? [],
+    resume,
     agentStatus: kind === "shell" ? "idle" : "running",
     cwd,
     repoRoot: git.repoRoot,
@@ -87,4 +90,14 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   }
 
   return session;
+}
+
+function agentCommand(kind: SessionKind, resume: boolean): string {
+  if (kind === "codex") {
+    return resume ? "codex resume" : "codex";
+  }
+  if (kind === "claude") {
+    return resume ? "claude -r" : "claude";
+  }
+  return "";
 }

@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   const parsed = parseArgs(process.argv.slice(2));
   const [command, ...rest] = parsed.positional;
 
-  if (command === "help" || command === "--help" || command === "-h") {
+  if (command === "help" || command === "--help" || command === "-h" || flagBoolean(parsed.flags, "help")) {
     console.log(usage());
     return;
   }
@@ -145,6 +145,7 @@ async function main(): Promise<void> {
         tags: flagTag ? [...tags, flagTag] : tags,
         attach: !flagBoolean(parsed.flags, "no-attach"),
         sendObjective: flagBoolean(parsed.flags, "send-objective"),
+        resume: flagBoolean(parsed.flags, "resume"),
         tmux: parseTmuxFlags(parsed.flags)
       });
       return;

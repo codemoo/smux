@@ -8,7 +8,7 @@ import type { CommandContext } from "../commands/context.js";
 import type { ListView, SmuxSession } from "../core/types.js";
 import { ask, confirm } from "./prompt.js";
 import { FullScreen, readInput } from "./screen.js";
-import { style } from "../core/theme.js";
+import { fillLine, style, terminalWidth } from "../core/theme.js";
 import { runNewSessionForm } from "./form.js";
 
 function matchesFilter(session: SmuxSession, filter: string): boolean {
@@ -40,7 +40,8 @@ function visibleSessions(sessions: SmuxSession[], view: ListView, filter: string
 
 async function showOverlay(screen: FullScreen, render: () => string): Promise<void> {
   for (;;) {
-    screen.draw(`${render()}\n\n${style.dim("Press any key to return")}`);
+    const footer = style.inverse(fillLine(" any key return   resize redraws", terminalWidth()));
+    screen.draw(`${render()}\n${footer}`);
     const input = await readInput();
     if (input.type === "key") {
       return;

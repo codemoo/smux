@@ -24,7 +24,10 @@ export function loadState(path = stateFilePath()): SmuxState {
     }
     return {
       version: CURRENT_VERSION,
-      sessions: parsed.sessions
+      sessions: parsed.sessions.map((session) => ({
+        ...session,
+        resume: session.resume ?? false
+      })) as SmuxSession[]
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {

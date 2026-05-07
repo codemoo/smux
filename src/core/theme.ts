@@ -48,12 +48,17 @@ export function padEndVisible(value: string, width: number): string {
   return `${clipped}${" ".repeat(padding)}`;
 }
 
+function envSize(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
 export function terminalWidth(): number {
-  return Math.max(stdout.columns ?? 100, 20);
+  return Math.max(stdout.columns ?? envSize("COLUMNS", 100), 20);
 }
 
 export function terminalHeight(): number {
-  return Math.max(stdout.rows ?? 32, 12);
+  return Math.max(stdout.rows ?? envSize("LINES", 32), 12);
 }
 
 export function key(value: string): string {

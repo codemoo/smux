@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import type { CommandContext } from "../commands/context.js";
 import { formatNewSessionForm } from "../core/format.js";
+import { activeSessions } from "../core/resolve.js";
 import type { SessionKind } from "../core/types.js";
 import { FullScreen, readInput } from "./screen.js";
 
@@ -9,6 +10,7 @@ export interface NewSessionFormResult {
   objective: string;
   kind: SessionKind;
   tags: string[];
+  resume: boolean;
   sendObjective: boolean;
 }
 
@@ -18,33 +20,40 @@ interface FormState {
   objective: string;
   kind: SessionKind;
   tags: string;
+  resume: boolean;
   sendObjective: boolean;
 }
 
-const fieldCount = 5;
+const STEP_NAME = 0;
+const STEP_KIND = 1;
+const STEP_RESUME = 2;
+const STEP_OBJECTIVE = 3;
+const STEP_TAGS = 4;
+const STEP_SEND = 5;
+const fieldCount = 6;
 const kinds: SessionKind[] = ["codex", "claude", "shell"];
 
 function currentValue(state: FormState): string {
-  if (state.step === 0) {
+  if (state.step === STEP_NAME) {
     return state.name;
   }
-  if (state.step === 1) {
+  if (state.step === STEP_OBJECTIVE) {
     return state.objective;
   }
-  if (state.step === 3) {
+  if (state.step === STEP_TAGS) {
     return state.tags;
   }
   return "";
 }
 
 function updateCurrentValue(state: FormState, value: string): FormState {
-  if (state.step === 0) {
+  if (state.step === STEP_NAME) {
     return { ...state, name: value };
   }
-  if (state.step === 1) {
+  if (state.step === STEP_OBJECTIVE) {
     return { ...state, objective: value };
   }
-  if (state.step === 3) {
+  if (state.step === STEP_TAGS) {
     return { ...state, tags: value };
   }
   return state;
@@ -55,16 +64,27 @@ function nextKind(kind: SessionKind, delta: number): SessionKind {
   return kinds[(index + delta + kinds.length) % kinds.length]!;
 }
 
+function updateKind(state: FormState, kind: SessionKind): FormState {
+  return {
+    ...state,
+    kind,
+    resume: kind === "shell" ? false : state.resume
+  };
+}
+
 function formResult(state: FormState): NewSessionFormResult {
+  const objective = state.objective.trim();
+  const resume = state.kind !== "shell" && state.resume;
   return {
     name: state.name.trim() || basename(process.cwd()),
-    objective: state.objective.trim(),
+    objective,
     kind: state.kind,
     tags: state.tags
       .split(",")
       .map((tag) => tag.trim())
       .filter(Boolean),
-    sendObjective: state.kind !== "shell" && state.objective.trim().length > 0 && state.sendObjective
+    resume,
+    sendObjective: state.kind !== "shell" && !resume && objective.length > 0 && state.sendObjective
   };
 }
 
@@ -78,6 +98,7 @@ export async function runNewSessionForm(
     objective: "",
     kind: "codex",
     tags: "",
+    resume: false,
     sendObjective: true
   };
 
@@ -85,6 +106,7 @@ export async function runNewSessionForm(
     screen.draw(formatNewSessionForm({
       state,
       cwd: process.cwd(),
+      activeCount: activeSessions(context.state).length,
       config: context.config
     }));
 
@@ -118,32 +140,43 @@ export async function runNewSessionForm(
       return formResult(state);
     }
 
-    if (state.step === 2) {
+    if (state.step === STEP_KIND) {
       if (name === "left") {
-        state = { ...state, kind: nextKind(state.kind, -1) };
+        state = updateKind(state, nextKind(state.kind, -1));
         continue;
       }
       if (name === "right") {
-        state = { ...state, kind: nextKind(state.kind, 1) };
+        state = updateKind(state, nextKind(state.kind, 1));
         continue;
       }
       if (sequence === "c") {
-        state = { ...state, kind: "codex" };
+        state = updateKind(state, "codex");
         continue;
       }
       if (sequence === "l") {
-        state = { ...state, kind: "claude" };
+        state = updateKind(state, "claude");
         continue;
       }
       if (sequence === "s") {
-        state = { ...state, kind: "shell" };
+        state = updateKind(state, "shell");
         continue;
       }
     }
 
-    if (state.step === 4) {
+    if (state.step === STEP_RESUME) {
+      if (state.kind !== "shell" && (sequence === " " || sequence === "y" || sequence === "n")) {
+        state = { ...state, resume: sequence === " " ? !state.resume : sequence === "y" };
+      }
+      continue;
+    }
+
+    if (state.step === STEP_SEND) {
+      const canSendObjective = state.kind !== "shell" && !state.resume && state.objective.trim().length > 0;
       if (sequence === " " || sequence === "y" || sequence === "n") {
-        state = { ...state, sendObjective: sequence === "n" ? false : !state.sendObjective };
+        state = {
+          ...state,
+          sendObjective: canSendObjective && (sequence === " " ? !state.sendObjective : sequence === "y")
+        };
       }
       continue;
     }
@@ -160,4 +193,3 @@ export async function runNewSessionForm(
     }
   }
 }
-

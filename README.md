@@ -12,6 +12,7 @@ The first implementation target is local-only:
 - navigate with direct keys: `j/k`, arrow keys, `/`, `?`, `enter`
 - create a new session from the current directory
 - choose session kind: `claude`, `codex`, or `shell`
+- start agent sessions fresh or through their resume pickers
 - attach to an existing session
 - keep session metadata in local state
 - sync rename changes between `smux` and `tmux`
@@ -41,6 +42,15 @@ npm install
 npm run build
 npm run smux -- list
 ```
+
+Resume an agent session picker when creating a new tmux session:
+
+```sh
+smux new --kind codex --resume
+smux new --kind claude --resume
+```
+
+`codex` starts with `codex resume`; `claude` starts with `claude -r`. In the full-screen dashboard, press `n` and toggle `resume previous` in the new session form.
 
 Useful settings:
 

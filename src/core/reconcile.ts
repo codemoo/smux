@@ -53,6 +53,7 @@ export function reconcile(state: SmuxState): SmuxState {
     return {
       ...session,
       name: tmux && tmux.name !== session.tmuxSessionName ? tmux.name : session.name,
+      resume: session.resume ?? false,
       cwd,
       tmuxSessionId: tmux?.id ?? session.tmuxSessionId,
       tmuxSessionName: tmux?.name ?? session.tmuxSessionName,
@@ -75,6 +76,7 @@ export function reconcile(state: SmuxState): SmuxState {
       kind: "shell",
       objective: "",
       tags: [],
+      resume: false,
       agentStatus: tmux.attached ? "running" : "idle",
       cwd: paneCurrentPath(tmux.id) ?? process.cwd(),
       tmuxSessionId: tmux.id,

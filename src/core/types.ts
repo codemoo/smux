@@ -31,6 +31,7 @@ export interface SmuxSession {
   kind: SessionKind;
   objective: string;
   tags: string[];
+  resume: boolean;
   agentStatus: AgentStatus;
   cwd: string;
   repoRoot?: string;

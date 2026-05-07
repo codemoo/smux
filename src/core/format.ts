@@ -26,6 +26,7 @@ interface NewSessionFormState {
   objective: string;
   kind: "claude" | "codex" | "shell";
   tags: string;
+  resume: boolean;
   sendObjective: boolean;
 }
 
@@ -200,12 +201,20 @@ export function formatList(sessions: SmuxSession[], view: ListView, selectedId?:
   ].join("\n");
 }
 
-function counts(sessions: SmuxSession[]): string {
+function counts(sessions: SmuxSession[], compact = false): string {
   const waiting = sessions.filter((session) => session.agentStatus === "waiting").length;
   const blocked = sessions.filter((session) => session.agentStatus === "blocked").length;
   const running = sessions.filter((session) => session.agentStatus === "running").length;
   const codex = sessions.filter((session) => session.kind === "codex").length;
   const claude = sessions.filter((session) => session.kind === "claude").length;
+  if (compact) {
+    return [
+      pill(`${sessions.length}`, "cyan"),
+      running ? pill(`${running} run`, "green") : undefined,
+      waiting ? pill(`${waiting} wait`, "yellow") : undefined,
+      blocked ? pill(`${blocked} block`, "red") : undefined
+    ].filter(Boolean).join(" ");
+  }
   return [
     pill(`${sessions.length} active`, "cyan"),
     pill(`${running} running`, "green"),
@@ -220,7 +229,15 @@ function tab(label: string, active: boolean): string {
   return active ? style.inverse(` ${label} `) : style.gray(` ${label} `);
 }
 
-export function formatTabs(view: ListView): string {
+export function formatTabs(view: ListView, compact = false): string {
+  if (compact) {
+    return [
+      tab("r", view === "recent"),
+      tab("p", view === "path"),
+      tab("a", view === "kind"),
+      tab("w", view === "waiting")
+    ].join(" ");
+  }
   return [
     tab("r recent", view === "recent"),
     tab("p path", view === "path"),
@@ -273,6 +290,16 @@ function statusDot(session: SmuxSession): string {
   return style.gray("●");
 }
 
+function startupLabel(session: SmuxSession): string {
+  if (session.kind === "shell") {
+    return "shell";
+  }
+  if (!session.resume) {
+    return "fresh";
+  }
+  return session.kind === "codex" ? "resume (codex resume)" : "resume (claude -r)";
+}
+
 function dashboardSessionRows(options: {
   sessions: SmuxSession[];
   selected?: SmuxSession;
@@ -303,6 +330,7 @@ function dashboardSessionRows(options: {
     const head = `${selected ? style.cyan("›") : " "} ${number} ${statusDot(session)} ${kindLabel(session.kind)} ${title} ${statusLabel(session.agentStatus)}`;
     const metaParts = [
       shortenPath(session.cwd),
+      session.resume ? "resume" : undefined,
       session.gitBranch ? `${session.gitBranch}${session.gitDirty ? "*" : ""}` : undefined,
       session.objective || undefined
     ].filter(Boolean);
@@ -351,6 +379,7 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     "",
     field("cwd", shortenPath(session.cwd)),
     field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-")),
+    field("startup", startupLabel(session)),
     field("scroll", scroll),
     field("tags", tags),
     "",
@@ -383,13 +412,14 @@ function topBar(options: {
 }): string[] {
   const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const title = ` smux `;
+  const compact = options.width < 72;
   const meta = [
     "local",
     `${options.sessions.length} active`,
-    `view ${options.view}`,
-    options.filter ? `filter ${options.filter}` : undefined,
-    `scroll ${options.config.tmux.historyLimit.toLocaleString()}`,
-    `mouse ${options.config.tmux.mouse ? "on" : "off"}`
+    compact ? options.view : `view ${options.view}`,
+    options.filter ? `/${options.filter}` : undefined,
+    compact ? undefined : `scroll ${options.config.tmux.historyLimit.toLocaleString()}`,
+    compact ? undefined : `mouse ${options.config.tmux.mouse ? "on" : "off"}`
   ].filter(Boolean).join("  ·  ");
   const right = ` ${now} `;
   const maxMetaWidth = Math.max(0, options.width - visibleLength(title) - visibleLength(right) - 2);
@@ -397,7 +427,7 @@ function topBar(options: {
   const padding = Math.max(1, options.width - visibleLength(line) - visibleLength(right));
   return [
     style.inverse(`${line}${" ".repeat(padding)}${right}`),
-    fillLine(`${formatTabs(options.view)}  ${counts(options.sessions)}`, options.width)
+    fillLine(`${formatTabs(options.view, compact)}  ${counts(options.sessions, compact)}`, options.width)
   ];
 }
 
@@ -477,8 +507,9 @@ function formatDashboardStacked(options: {
   const notice = options.message ? `${style.yellow("notice")} ${options.message}` : "";
   const fixedRows = 6 + (notice ? 1 : 0);
   const remaining = Math.max(4, height - fixedRows);
-  const listHeight = Math.max(4, Math.floor(remaining * 0.55));
-  const detailHeight = Math.max(4, remaining - listHeight);
+  const showDetails = remaining >= 8;
+  const listHeight = showDetails ? Math.max(4, Math.floor(remaining * 0.55)) : remaining;
+  const detailHeight = showDetails ? Math.max(3, remaining - listHeight) : 0;
 
   const list = boxLines(
     `sessions ${options.sessions.length}/${options.allSessions.length}`,
@@ -492,12 +523,14 @@ function formatDashboardStacked(options: {
     width,
     listHeight
   );
-  const details = boxLines(
-    options.selected ? `details ${options.selected.name}` : "details",
-    detailRows(options.selected, width - 4),
-    width,
-    detailHeight
-  );
+  const details = showDetails
+    ? boxLines(
+        options.selected ? `details ${options.selected.name}` : "details",
+        detailRows(options.selected, width - 4),
+        width,
+        detailHeight
+      )
+    : [];
 
   return [
     header,
@@ -505,8 +538,7 @@ function formatDashboardStacked(options: {
     ...(notice ? [fillLine(notice, width)] : []),
     "",
     ...list,
-    "",
-    ...details,
+    ...(showDetails ? ["", ...details] : []),
     "",
     commandBar(width)
   ].join("\n");
@@ -529,7 +561,7 @@ export function formatDashboard(options: {
 }
 
 export function formatDashboardHelp(): string {
-  return box("keyboard", [
+  return boxLines("keyboard", [
     `${key("↑/↓")} or ${key("j/k")} move selection`,
     `${key("enter")} attach to selected tmux session`,
     `${key("n")} create a new session`,
@@ -539,7 +571,7 @@ export function formatDashboardHelp(): string {
     `${key("m")} send a prompt to selected agent`,
     `${key("x")} kill selected session after confirmation`,
     `${key("esc")} clear filter   ${key("q")} quit`
-  ]);
+  ], terminalWidth(), Math.max(6, terminalHeight() - 1)).join("\n");
 }
 
 function inputLine(label: string, value: string, active: boolean, hint?: string): string {
@@ -560,52 +592,140 @@ function segmentedKind(value: "claude" | "codex" | "shell", active: boolean): st
   return [item("codex", "c"), item("claude", "l"), item("shell", "s")].join(" ");
 }
 
+function checkboxLine(label: string, checked: boolean, active: boolean, enabled: boolean, hint: string): string {
+  const marker = active ? style.cyan("›") : " ";
+  const boxValue = checked ? "[x]" : "[ ]";
+  const value = enabled
+    ? checked
+      ? style.green(`${boxValue} on`)
+      : style.gray(`${boxValue} off`)
+    : style.gray("disabled");
+  return `${marker} ${padEndVisible(label, 18)} ${value} ${style.dim(hint)}`;
+}
+
+function formTopBar(width: number, activeCount: number, config: SmuxConfig): string {
+  const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const left = " smux ";
+  const compact = width < 64;
+  const meta = compact
+    ? ["new", `${activeCount} active`].join("  ·  ")
+    : [
+        "new session",
+        "local",
+        `${activeCount} active`,
+        `scroll ${config.tmux.historyLimit.toLocaleString()}`,
+        `mouse ${config.tmux.mouse ? "on" : "off"}`
+      ].join("  ·  ");
+  const right = ` ${now} `;
+  const center = `${left}${truncate(meta, Math.max(0, width - visibleLength(left) - visibleLength(right) - 2))}`;
+  const padding = Math.max(1, width - visibleLength(center) - visibleLength(right));
+  return style.inverse(`${center}${" ".repeat(padding)}${right}`);
+}
+
+function formStepLine(step: number): string {
+  const labels = ["name", "agent", "resume", "objective", "tags", "start"];
+  return labels
+    .map((label, index) => (index === step ? style.cyan(style.bold(label)) : style.gray(label)))
+    .join(style.gray("  /  "));
+}
+
+function startupPreview(state: NewSessionFormState): string {
+  if (state.kind === "shell") {
+    return "tmux shell";
+  }
+  if (state.kind === "codex") {
+    return state.resume ? "codex resume" : "codex";
+  }
+  return state.resume ? "claude -r" : "claude";
+}
+
+function fitFormBody(
+  fullBody: string[],
+  fieldRows: string[],
+  state: NewSessionFormState,
+  cwd: string,
+  contentHeight: number
+): string[] {
+  if (fullBody.length <= contentHeight) {
+    return fullBody;
+  }
+
+  const activeField = fieldRows[state.step] ?? fieldRows[0]!;
+  const previous = fieldRows[state.step - 1];
+  const next = fieldRows[state.step + 1];
+  const compact = [
+    `${style.bold("Create session")} ${style.gray(`step ${state.step + 1}/6`)}`,
+    formStepLine(state.step),
+    "",
+    previous ? style.dim(previous) : field("cwd", shortenPath(cwd)),
+    activeField,
+    next ? style.dim(next) : field("startup", startupPreview(state)),
+    "",
+    style.dim("Enter next/confirm  ·  Up/Down move  ·  Esc cancel")
+  ];
+  return compact.slice(0, Math.max(1, contentHeight));
+}
+
 export function formatNewSessionForm(options: {
   state: NewSessionFormState;
   cwd: string;
+  activeCount: number;
   config: SmuxConfig;
 }): string {
   const width = terminalWidth();
   const height = terminalHeight();
   const state = options.state;
-  const [header] = topBar({
-    width,
-    view: "recent",
-    sessions: [],
-    filter: "",
-    config: options.config
-  });
-  const formWidth = Math.min(width, Math.max(72, Math.floor(width * 0.72)));
+  const header = formTopBar(width, options.activeCount, options.config);
+  const formWidth = Math.min(width, Math.max(60, Math.min(96, width - 4)));
   const leftPad = Math.max(0, Math.floor((width - formWidth) / 2));
   const spacer = " ".repeat(leftPad);
-  const kindLine = `${state.step === 2 ? style.cyan("›") : " "} ${padEndVisible("agent", 18)} ${segmentedKind(state.kind, state.step === 2)} ${style.dim("left/right or hotkey")}`;
-  const canSendObjective = state.kind !== "shell" && state.objective.trim().length > 0;
+  const kindLine = `${state.step === 1 ? style.cyan("›") : " "} ${padEndVisible("agent", 18)} ${segmentedKind(state.kind, state.step === 1)} ${style.dim("left/right or hotkey")}`;
+  const canResume = state.kind !== "shell";
+  const resumeHint = state.kind === "codex"
+    ? "starts codex resume"
+    : state.kind === "claude"
+      ? "starts claude -r"
+      : "agent sessions only";
+  const resumeLine = checkboxLine("resume previous", state.resume, state.step === 2, canResume, resumeHint);
+  const canSendObjective = state.kind !== "shell" && !state.resume && state.objective.trim().length > 0;
   const sendValue = !canSendObjective
     ? style.gray("disabled")
     : state.sendObjective
       ? style.green("send objective")
       : style.gray("do not send");
-  const sendHint = canSendObjective ? "space toggles" : "requires agent objective";
-  const sendLine = `${state.step === 4 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
-  const body = [
-    style.bold("Create session"),
-    style.dim("Keep this flow in the dashboard. Esc cancels, Enter advances."),
-    "",
-    field("cwd", shortenPath(options.cwd)),
-    "",
+  const sendHint = state.resume
+    ? "disabled while resume is on"
+    : canSendObjective
+      ? "space toggles"
+      : "requires agent objective";
+  const sendLine = `${state.step === 5 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
+  const fieldRows = [
     inputLine("name", state.name, state.step === 0, "editable"),
-    inputLine("objective", state.objective, state.step === 1, "optional"),
     kindLine,
-    inputLine("tags", state.tags, state.step === 3, "comma separated"),
-    sendLine,
+    resumeLine,
+    inputLine("objective", state.objective, state.step === 3, "optional"),
+    inputLine("tags", state.tags, state.step === 4, "comma separated"),
+    sendLine
+  ];
+  const body = [
+    `${style.bold("Create session")} ${style.gray(`step ${state.step + 1}/6`)}`,
+    formStepLine(state.step),
+    field("cwd", shortenPath(options.cwd)),
+    field("startup", startupPreview(state)),
+    "",
+    ...fieldRows,
     "",
     style.dim("Enter next/confirm  ·  Up/Down move  ·  Esc cancel")
   ];
-  const boxHeight = Math.min(Math.max(14, height - 6), 24);
-  const rows = boxLines("new session", body, formWidth, boxHeight).map((line) => `${spacer}${line}`);
-  const footer = style.inverse(fillLine(" enter next/confirm   ↑/↓ move   ←/→ agent   space toggle   esc cancel", width));
+  const boxHeight = Math.max(7, Math.min(24, height - 4));
+  const visibleBody = fitFormBody(body, fieldRows, state, options.cwd, boxHeight - 2);
+  const rows = boxLines("new session", visibleBody, formWidth, boxHeight).map((line) => `${spacer}${line}`);
+  const footerText = width < 64
+    ? " enter next   ↑/↓ move   esc cancel"
+    : " enter next/confirm   ↑/↓ move   ←/→ agent   space toggle   esc cancel";
+  const footer = style.inverse(fillLine(footerText, width));
 
-  return [header, "", "", ...rows, "", footer].join("\n");
+  return [header, "", ...rows, "", footer].join("\n");
 }
 
 export function formatStatus(session: SmuxSession): string {
@@ -627,10 +747,11 @@ export function formatStatus(session: SmuxSession): string {
         .join("\n")
     : `  ${style.gray("-")}`;
 
-  return box(`${session.name} ${kindLabel(session.kind)} ${statusLabel(session.agentStatus)}`, [
+  return boxLines(`${session.name} ${kindLabel(session.kind)} ${statusLabel(session.agentStatus)}`, [
     field("cwd", shortenPath(session.cwd)),
     field("git", git),
     field("tmux", session.status),
+    field("startup", startupLabel(session)),
     field("scroll", tmux),
     field("objective", session.objective || style.gray("-")),
     field("tags", tags),
@@ -640,7 +761,7 @@ export function formatStatus(session: SmuxSession): string {
     "",
     sectionTitle("notes"),
     notes
-  ]);
+  ], terminalWidth(), Math.max(8, terminalHeight() - 1)).join("\n");
 }
 
 export function formatHelp(): string {
@@ -651,6 +772,7 @@ export function formatHelp(): string {
     `  ${style.bold("smux")}                                      ${style.dim("open the session dashboard")}`,
     `  ${style.bold("smux list")} [--view recent|path|kind|waiting] ${style.dim("show sessions")}`,
     `  ${style.bold("smux new")} [--kind codex|claude|shell]       ${style.dim("create a session")}`,
+    `            [--name NAME] [--objective TEXT] [--resume] [--send-objective]`,
     `            [--history-limit N] [--mouse|--no-mouse]`,
     `  ${style.bold("smux attach")} <name-or-id>                   ${style.dim("attach to tmux")}`,
     `  ${style.bold("smux status")} <name-or-id>                   ${style.dim("inspect without attaching")}`,
@@ -675,21 +797,25 @@ export function formatHelp(): string {
 }
 
 export function formatConfig(config: SmuxConfig, path: string): string {
-  return box("smux config", [
+  return boxLines("smux config", [
     field("path", path),
     field("fullscreen", config.fullscreen ? style.green("on") : style.gray("off")),
     field("tmux.history-limit", style.yellow(String(config.tmux.historyLimit))),
     field("tmux.mouse", config.tmux.mouse ? style.green("on") : style.gray("off")),
     field("tmux.mode-keys", config.tmux.modeKeys),
     "",
-    style.dim("Set values with: smux config set tmux.history-limit 200000")
-  ]);
+    sectionTitle("commands"),
+    style.dim("smux config set tmux.history-limit 200000"),
+    style.dim("smux config set tmux.mouse on")
+  ], terminalWidth(), Math.max(8, terminalHeight() - 1)).join("\n");
 }
 
 export function formatSessionConfig(session: SmuxSession, effective: Required<TmuxOptions>): string {
-  return box(`session config ${session.name}`, [
+  return boxLines(`session config ${session.name}`, [
     field("tmux.history-limit", String(session.tmux?.historyLimit ?? `${effective.historyLimit} (global)`)),
     field("tmux.mouse", session.tmux?.mouse === undefined ? `${effective.mouse ? "on" : "off"} (global)` : session.tmux.mouse ? "on" : "off"),
-    field("tmux.mode-keys", session.tmux?.modeKeys ?? `${effective.modeKeys} (global)`)
-  ]);
+    field("tmux.mode-keys", session.tmux?.modeKeys ?? `${effective.modeKeys} (global)`),
+    "",
+    style.dim(`smux set ${session.name} tmux.history-limit 300000`)
+  ], terminalWidth(), Math.max(7, terminalHeight() - 1)).join("\n");
 }
