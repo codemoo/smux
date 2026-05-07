@@ -29,6 +29,7 @@ function setRawMode(enabled: boolean): void {
 
 export class FullScreen {
   private active = false;
+  private frame: string | undefined;
 
   constructor(private readonly enabled: boolean) {}
 
@@ -37,9 +38,10 @@ export class FullScreen {
       return;
     }
     this.active = true;
+    this.frame = undefined;
     setRawMode(true);
     stdin.resume();
-    stdout.write("\u001b[?1049h\u001b[2J\u001b[H");
+    stdout.write("\u001b[?1049h\u001b[?25l\u001b[2J\u001b[H");
   }
 
   draw(content: string): void {
@@ -47,7 +49,15 @@ export class FullScreen {
       console.log(content);
       return;
     }
-    stdout.write(`\u001b[2J\u001b[H${content}`);
+    if (content === this.frame) {
+      return;
+    }
+    const rows = content
+      .split("\n")
+      .map((line) => `\u001b[2K${line}`)
+      .join("\n");
+    stdout.write(`\u001b[H${rows}\u001b[J`);
+    this.frame = content;
   }
 
   stop(): void {
@@ -56,18 +66,23 @@ export class FullScreen {
     }
     setRawMode(false);
     stdin.pause();
-    stdout.write("\u001b[?1049l");
+    stdout.write("\u001b[?25h\u001b[?1049l");
+    this.frame = undefined;
     this.active = false;
   }
 
   suspend(): void {
+    this.frame = undefined;
+    stdout.write("\u001b[?25h");
     setRawMode(false);
   }
 
   resume(): void {
     if (this.active) {
+      this.frame = undefined;
       setRawMode(true);
       stdin.resume();
+      stdout.write("\u001b[?25l");
     }
   }
 }

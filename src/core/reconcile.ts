@@ -30,6 +30,20 @@ function inferAgentStatus(session?: TmuxSession, current?: SmuxSession): AgentSt
   return session.attached ? "running" : "waiting";
 }
 
+function reconciledSessionChanged(before: SmuxSession, after: SmuxSession): boolean {
+  return (
+    before.name !== after.name ||
+    before.resume !== after.resume ||
+    before.cwd !== after.cwd ||
+    before.tmuxSessionId !== after.tmuxSessionId ||
+    before.tmuxSessionName !== after.tmuxSessionName ||
+    before.status !== after.status ||
+    before.agentStatus !== after.agentStatus ||
+    before.lastPreview !== after.lastPreview ||
+    before.lastAttachedAt !== after.lastAttachedAt
+  );
+}
+
 export function reconcile(state: SmuxState): SmuxState {
   const tmuxSessions = listTmuxSessions();
   const byId = new Map(tmuxSessions.map((session) => [session.id, session]));
@@ -50,7 +64,7 @@ export function reconcile(state: SmuxState): SmuxState {
     const cwd = tmux ? paneCurrentPath(target) ?? session.cwd : session.cwd;
     const lastPreview = tmux ? capturePreview(target) || session.lastPreview : session.lastPreview;
 
-    return {
+    const updated = {
       ...session,
       name: tmux && tmux.name !== session.tmuxSessionName ? tmux.name : session.name,
       resume: session.resume ?? false,
@@ -61,8 +75,11 @@ export function reconcile(state: SmuxState): SmuxState {
       agentStatus: inferAgentStatus(tmux, session),
       lastPreview,
       lastAttachedAt: isoFromEpoch(tmux?.lastAttachedAtEpoch) ?? session.lastAttachedAt,
-      updatedAt: now
+      updatedAt: session.updatedAt
     };
+    return reconciledSessionChanged(session, updated)
+      ? { ...updated, updatedAt: now }
+      : updated;
   });
 
   for (const tmux of tmuxSessions) {

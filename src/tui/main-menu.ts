@@ -157,11 +157,15 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
           message = "New session cancelled.";
           continue;
         }
-        await leaveForTmux(screen, async () => {
-          await newCommand(context, result);
-        });
-        context.state = reconcile(context.state);
-        message = "Detached. Back in smux.";
+        try {
+          await leaveForTmux(screen, async () => {
+            await newCommand(context, result);
+          });
+          context.state = reconcile(context.state);
+          message = "Detached. Back in smux.";
+        } catch (error) {
+          message = (error as Error).message;
+        }
         continue;
       }
 

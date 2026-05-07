@@ -6,7 +6,6 @@ import {
   boxLines,
   field,
   fillLine,
-  joinColumns,
   key,
   padEndVisible,
   pill,
@@ -161,16 +160,6 @@ function emptyPanel(filter: string): string[] {
   ];
 }
 
-export function formatShell(view: ListView, sessions: SmuxSession[], filter = "", config?: SmuxConfig): string {
-  const count = sessions.length;
-  const active = count === 1 ? "1 session" : `${count} sessions`;
-  const scroll = config ? `scroll ${config.tmux.historyLimit.toLocaleString()} · mouse ${config.tmux.mouse ? "on" : "off"}` : "";
-  return [
-    `${style.bold(style.cyan("smux"))} ${style.dim("AI session control for tmux")} ${style.gray("·")} ${style.gray(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}`,
-    `${style.gray("view")} ${style.bold(view)}   ${style.gray("active")} ${active}${filter ? `   ${style.gray("filter")} ${style.yellow(filter)}` : ""}${scroll ? `   ${style.gray(scroll)}` : ""}`
-  ].join("\n");
-}
-
 export function formatList(sessions: SmuxSession[], view: ListView, selectedId?: string, filter?: string): string {
   const active = sortRecent(sessions);
   if (active.length === 0) {
@@ -268,34 +257,6 @@ export function formatTabs(view: ListView, compact = false): string {
     tab("a agent", view === "kind"),
     tab("w waiting", view === "waiting")
   ].join(" ");
-}
-
-function formatFocus(session?: SmuxSession): string {
-  if (!session) {
-    return box("focus", [style.gray("No session selected")]);
-  }
-
-  const preview = session.lastPreview
-    ? session.lastPreview
-        .split("\n")
-        .filter(Boolean)
-        .slice(-4)
-        .map((line) => `  ${style.dim(truncate(line, terminalWidth() - 8))}`)
-        .join("\n")
-    : `  ${style.gray("-")}`;
-
-  const objective = session.objective || style.gray("no objective");
-  const tags = session.tags.length ? session.tags.map((tag) => style.cyan(`#${tag}`)).join(" ") : style.gray("-");
-
-  return box(`focus ${session.name}`, [
-    `${kindLabel(session.kind)} ${statusLabel(session.agentStatus)}   ${field("cwd", shortenPath(session.cwd))}`,
-    `${field("objective", objective)}`,
-    `${field("tags", tags)}`,
-    `${field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-"))}`,
-    "",
-    sectionTitle("preview"),
-    preview
-  ]);
 }
 
 function statusDot(session: SmuxSession): string {
@@ -467,119 +428,6 @@ function topBar(options: {
     fillLine(`${line}${" ".repeat(padding)}${right}`, options.width),
     alignBetween(formatTabs(options.view, compact), counts(options.sessions, compact), options.width)
   ];
-}
-
-function formatDashboardWide(options: {
-  view: ListView;
-  sessions: SmuxSession[];
-  allSessions: SmuxSession[];
-  selected?: SmuxSession;
-  filter: string;
-  config: SmuxConfig;
-  message?: string;
-}): string {
-  const width = terminalWidth();
-  const height = terminalHeight();
-  const leftWidth = Math.max(48, Math.floor(width * 0.58));
-  const rightWidth = width - leftWidth - 2;
-  const fixedRows = 6;
-  const panelHeight = Math.max(4, height - fixedRows);
-
-  const left = boxLines(
-    `${style.cyan("sessions")} ${options.sessions.length}/${options.allSessions.length}`,
-    dashboardSessionRows({
-      sessions: options.sessions,
-      selected: options.selected,
-      width: leftWidth - 4,
-      height: panelHeight - 2,
-      filter: options.filter
-    }),
-    leftWidth,
-    panelHeight
-  );
-  const right = boxLines(
-    options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
-    detailRows(options.selected, rightWidth - 4),
-    rightWidth,
-    panelHeight
-  );
-
-  const [header, subheader] = topBar({
-    width,
-    view: options.view,
-    sessions: options.allSessions,
-    filter: options.filter,
-    config: options.config
-  });
-  const notice = options.message ? `${solid("notice", "yellow")} ${options.message}` : "";
-
-  return [
-    header,
-    subheader,
-    fillLine(notice, width),
-    "",
-    ...joinColumns(left, right),
-    "",
-    commandBar(width)
-  ].join("\n");
-}
-
-function formatDashboardStacked(options: {
-  view: ListView;
-  sessions: SmuxSession[];
-  allSessions: SmuxSession[];
-  selected?: SmuxSession;
-  filter: string;
-  config: SmuxConfig;
-  message?: string;
-}): string {
-  const width = terminalWidth();
-  const height = terminalHeight();
-  const [header, subheader] = topBar({
-    width,
-    view: options.view,
-    sessions: options.allSessions,
-    filter: options.filter,
-    config: options.config
-  });
-  const notice = options.message ? `${solid("notice", "yellow")} ${options.message}` : "";
-  const fixedRows = 7;
-  const remaining = Math.max(4, height - fixedRows);
-  const showDetails = remaining >= 8;
-  const listHeight = showDetails ? Math.max(4, Math.floor(remaining * 0.55)) : remaining;
-  const detailHeight = showDetails ? Math.max(3, remaining - listHeight) : 0;
-
-  const list = boxLines(
-    `${style.cyan("sessions")} ${options.sessions.length}/${options.allSessions.length}`,
-    dashboardSessionRows({
-      sessions: options.sessions,
-      selected: options.selected,
-      width: width - 4,
-      height: listHeight - 2,
-      filter: options.filter
-    }),
-    width,
-    listHeight
-  );
-  const details = showDetails
-    ? boxLines(
-        options.selected ? `${style.cyan("focus")} ${options.selected.name}` : style.cyan("focus"),
-        detailRows(options.selected, width - 4),
-        width,
-        detailHeight
-      )
-    : [];
-
-  return [
-    header,
-    subheader,
-    fillLine(notice, width),
-    "",
-    ...list,
-    ...(showDetails ? ["", ...details] : []),
-    "",
-    commandBar(width)
-  ].join("\n");
 }
 
 function fitScreenRows(rows: string[], width: number, height: number): string {

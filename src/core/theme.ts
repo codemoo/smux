@@ -126,18 +126,6 @@ export function boxLines(title: string, body: string[], width: number, height?: 
   return [topRule, ...rows, bottomRule];
 }
 
-export function joinColumns(left: string[], right: string[], gap = 2): string[] {
-  const leftWidth = Math.max(...left.map((line) => visibleLength(line)), 0);
-  const height = Math.max(left.length, right.length);
-  const rows: string[] = [];
-
-  for (let index = 0; index < height; index += 1) {
-    rows.push(`${padEndVisible(left[index] ?? "", leftWidth)}${" ".repeat(gap)}${right[index] ?? ""}`);
-  }
-
-  return rows;
-}
-
 export function box(title: string, body: string[]): string {
   return boxLines(title, body, terminalWidth()).join("\n");
 }
