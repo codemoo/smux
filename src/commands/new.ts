@@ -43,22 +43,16 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   const tmuxOptions = effectiveTmuxOptions(context.config, options.tmux);
   const resume = options.resume === true && kind !== "shell";
 
-  createTmuxSession({
+  const tmuxSession = createTmuxSession({
     name,
     cwd,
     smuxSessionId: id,
     kind
   });
-  applyTmuxOptions(name, tmuxOptions);
+  const target = tmuxSession.id;
+  applyTmuxOptions(target, tmuxOptions);
 
-  if (kind !== "shell") {
-    sendCommand(name, agentCommand(kind, resume));
-    if (!resume && options.objective && options.sendObjective) {
-      sendCommand(name, options.objective);
-    }
-  }
-
-  const session: SmuxSession = {
+  let session: SmuxSession = {
     id,
     name,
     kind,
@@ -70,23 +64,54 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     repoRoot: git.repoRoot,
     gitBranch: git.branch,
     gitDirty: git.dirty,
+    tmuxSessionId: tmuxSession.id,
     tmuxSessionName: name,
     tmux: options.tmux,
     status: "detached",
     notes: [],
     createdAt: now,
-    updatedAt: now,
-    lastAttachedAt: options.attach === false ? undefined : now
+    updatedAt: now
   };
 
-  const nextState = upsertSession(context.state, session);
-  context.save(nextState);
+  context.save(upsertSession(context.state, session));
+
+  if (kind !== "shell") {
+    try {
+      sendCommand(target, agentCommand(kind, resume));
+      if (!resume && options.objective && options.sendObjective) {
+        sendCommand(target, options.objective);
+      }
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      session = {
+        ...session,
+        agentStatus: "blocked",
+        notes: [
+          ...session.notes,
+          {
+            text: `Startup command failed: ${(error as Error).message}`,
+            createdAt: failedAt
+          }
+        ],
+        updatedAt: failedAt
+      };
+      context.save(upsertSession(context.state, session));
+      throw error;
+    }
+  }
 
   if (options.attach !== false) {
-    const code = await attachTmuxSession(name);
+    const code = await attachTmuxSession(target);
     if (code !== 0) {
-      process.exitCode = code;
+      throw new Error(`tmux attach-session failed for "${name}" with exit code ${code}.`);
     }
+    const attachedAt = new Date().toISOString();
+    session = {
+      ...session,
+      lastAttachedAt: attachedAt,
+      updatedAt: attachedAt
+    };
+    context.save(upsertSession(context.state, session));
   }
 
   return session;

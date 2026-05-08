@@ -51,7 +51,7 @@ export function createTmuxSession(options: {
   cwd: string;
   smuxSessionId: string;
   kind: SessionKind;
-}): void {
+}): TmuxSession {
   const result = run("tmux", [
     "new-session",
     "-d",
@@ -69,11 +69,12 @@ export function createTmuxSession(options: {
     throw new Error(`tmux new-session failed${detail ? `: ${detail}` : ""}`);
   }
 
-  const created = listTmuxSessions().some((session) => session.name === options.name);
+  const created = listTmuxSessions().find((session) => session.name === options.name);
   if (!created) {
     const detail = result.stderr.trim() || result.stdout.trim();
     throw new Error(`tmux did not create session "${options.name}"${detail ? `: ${detail}` : ""}`);
   }
+  return created;
 }
 
 export function sendCommand(target: string, command: string): void {
