@@ -17,10 +17,9 @@ The first implementation target is local-only:
 - attach to an existing session
 - keep session metadata in local state
 - sync rename changes between `smux` and `tmux`
-- track each agent session's objective, tags, git branch, and lightweight status
+- track each session's kind, current path, git branch, and lightweight status
 - inspect an agent session without attaching
-- send a short confirmed message to an agent session from outside tmux
-- kill one session or all active sessions after confirmation
+- kill one session or all active sessions
 - set tmux scrollback/mouse defaults globally or per session
 - show `detach C-b d -> smux dashboard` in the tmux statusline while attached
 
@@ -78,8 +77,7 @@ n              new session
 ?              key help
 r/p/a/w        recent/path/agent/waiting views
 s              status panel
-m              send message
-x              kill session
+x              press twice to kill session
 q              quit
 ```
 

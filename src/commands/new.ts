@@ -4,17 +4,15 @@ import { gitInfo } from "../core/git.js";
 import { effectiveTmuxOptions } from "../core/config.js";
 import { createTmuxSession, sendCommand, attachTmuxSession, applyTmuxOptions } from "../core/tmux.js";
 import { upsertSession } from "../core/store.js";
+import { activeSessions } from "../core/resolve.js";
 import type { SessionKind, SmuxSession, TmuxOptions } from "../core/types.js";
 import type { CommandContext } from "./context.js";
 
 export interface NewSessionOptions {
   name?: string;
   kind?: SessionKind;
-  objective?: string;
-  tags?: string[];
   cwd?: string;
   attach?: boolean;
-  sendObjective?: boolean;
   resume?: boolean;
   tmux?: TmuxOptions;
 }
@@ -35,7 +33,7 @@ function uniqueName(base: string, existingNames: Set<string>): string {
 export async function newCommand(context: CommandContext, options: NewSessionOptions): Promise<SmuxSession> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const kind = options.kind ?? "shell";
-  const existingNames = new Set(context.state.sessions.map((session) => session.tmuxSessionName));
+  const existingNames = new Set(activeSessions(context.state).map((session) => session.tmuxSessionName));
   const name = uniqueName(options.name ?? basename(cwd), existingNames);
   const id = createSessionId();
   const now = new Date().toISOString();
@@ -56,8 +54,6 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     id,
     name,
     kind,
-    objective: options.objective ?? "",
-    tags: options.tags ?? [],
     resume,
     agentStatus: kind === "shell" ? "idle" : "running",
     cwd,
@@ -78,9 +74,6 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
   if (kind !== "shell") {
     try {
       sendCommand(target, agentCommand(kind, resume));
-      if (!resume && options.objective && options.sendObjective) {
-        sendCommand(target, options.objective);
-      }
     } catch (error) {
       const failedAt = new Date().toISOString();
       session = {

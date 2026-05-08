@@ -81,12 +81,6 @@ export function sendCommand(target: string, command: string): void {
   runChecked("tmux", ["send-keys", "-t", target, command, "C-m"]);
 }
 
-export function pasteMessage(target: string, message: string): void {
-  runChecked("tmux", ["set-buffer", message]);
-  runChecked("tmux", ["paste-buffer", "-t", target]);
-  runChecked("tmux", ["send-keys", "-t", target, "C-m"]);
-}
-
 function setTmuxOption(args: string[]): void {
   run("tmux", args);
 }

@@ -92,8 +92,6 @@ export function reconcile(state: SmuxState): SmuxState {
       id: `tmux_${tmux.id.replace(/[^a-zA-Z0-9_-]/g, "")}`,
       name: tmux.name,
       kind: "shell",
-      objective: "",
-      tags: [],
       resume: false,
       agentStatus: tmux.attached ? "running" : "idle",
       cwd: paneCurrentPath(tmux.id) ?? process.cwd(),

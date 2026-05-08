@@ -10,32 +10,23 @@ import { FullScreen, readInput } from "./screen.js";
 export interface NewSessionFormResult {
   name: string;
   cwd: string;
-  objective: string;
   kind: SessionKind;
-  tags: string[];
   resume: boolean;
-  sendObjective: boolean;
 }
 
 interface FormState {
   step: number;
   name: string;
   cwd: string;
-  objective: string;
   kind: SessionKind;
-  tags: string;
   resume: boolean;
-  sendObjective: boolean;
 }
 
 const STEP_NAME = 0;
 const STEP_CWD = 1;
 const STEP_KIND = 2;
 const STEP_RESUME = 3;
-const STEP_OBJECTIVE = 4;
-const STEP_TAGS = 5;
-const STEP_SEND = 6;
-const fieldCount = 7;
+const fieldCount = 4;
 const kinds: SessionKind[] = ["codex", "claude", "shell"];
 
 function currentValue(state: FormState): string {
@@ -44,12 +35,6 @@ function currentValue(state: FormState): string {
   }
   if (state.step === STEP_CWD) {
     return state.cwd;
-  }
-  if (state.step === STEP_OBJECTIVE) {
-    return state.objective;
-  }
-  if (state.step === STEP_TAGS) {
-    return state.tags;
   }
   return "";
 }
@@ -60,12 +45,6 @@ function updateCurrentValue(state: FormState, value: string): FormState {
   }
   if (state.step === STEP_CWD) {
     return { ...state, cwd: value };
-  }
-  if (state.step === STEP_OBJECTIVE) {
-    return { ...state, objective: value };
-  }
-  if (state.step === STEP_TAGS) {
-    return { ...state, tags: value };
   }
   return state;
 }
@@ -163,19 +142,12 @@ function cwdCompletion(value: string): CwdCompletion | undefined {
 
 function formResult(state: FormState): NewSessionFormResult {
   const cwd = resolveCwd(state.cwd);
-  const objective = state.objective.trim();
   const resume = state.kind !== "shell" && state.resume;
   return {
     name: state.name.trim() || basename(cwd),
     cwd,
-    objective,
     kind: state.kind,
-    tags: state.tags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean),
-    resume,
-    sendObjective: state.kind !== "shell" && !resume && objective.length > 0 && state.sendObjective
+    resume
   };
 }
 
@@ -187,11 +159,8 @@ export async function runNewSessionForm(
     step: 0,
     name: basename(process.cwd()),
     cwd: process.cwd(),
-    objective: "",
     kind: "codex",
-    tags: "",
-    resume: false,
-    sendObjective: true
+    resume: false
   };
 
   for (;;) {
@@ -270,17 +239,6 @@ export async function runNewSessionForm(
     if (state.step === STEP_RESUME) {
       if (state.kind !== "shell" && (sequence === " " || sequence === "y" || sequence === "n")) {
         state = { ...state, resume: sequence === " " ? !state.resume : sequence === "y" };
-      }
-      continue;
-    }
-
-    if (state.step === STEP_SEND) {
-      const canSendObjective = state.kind !== "shell" && !state.resume && state.objective.trim().length > 0;
-      if (sequence === " " || sequence === "y" || sequence === "n") {
-        state = {
-          ...state,
-          sendObjective: canSendObjective && (sequence === " " ? !state.sendObjective : sequence === "y")
-        };
       }
       continue;
     }

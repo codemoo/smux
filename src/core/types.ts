@@ -29,8 +29,6 @@ export interface SmuxSession {
   id: string;
   name: string;
   kind: SessionKind;
-  objective: string;
-  tags: string[];
   resume: boolean;
   agentStatus: AgentStatus;
   cwd: string;

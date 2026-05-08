@@ -1,12 +1,10 @@
 import { attachCommand } from "../commands/attach.js";
 import { killCommand } from "../commands/kill.js";
 import { newCommand } from "../commands/new.js";
-import { sendCommandToSession } from "../commands/send.js";
 import { activeSessions } from "../core/resolve.js";
 import { formatDashboard, formatDashboardHelp, formatStatus, sortRecent } from "../core/format.js";
 import { refreshContextState, type CommandContext } from "../commands/context.js";
 import type { ListView, SmuxSession } from "../core/types.js";
-import { ask, confirm } from "./prompt.js";
 import { FullScreen, readInput } from "./screen.js";
 import { fillLine, style, terminalWidth } from "../core/theme.js";
 import { runNewSessionForm } from "./form.js";
@@ -20,9 +18,7 @@ function matchesFilter(session: SmuxSession, filter: string): boolean {
     session.kind,
     session.agentStatus,
     session.cwd,
-    session.objective,
-    session.gitBranch,
-    ...session.tags
+    session.gitBranch
   ]
     .filter(Boolean)
     .join(" ")
@@ -74,6 +70,8 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
   let filter = "";
   let selectedIndex = 0;
   let message: string | undefined;
+  let filterMode = false;
+  let pendingKillName: string | undefined;
   let lastKeyAt = 0;
   const screen = new FullScreen(context.config.fullscreen);
   screen.start();
@@ -85,6 +83,11 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
       const sessions = visibleSessions(allSessions, view, filter);
       selectedIndex = Math.min(Math.max(selectedIndex, 0), Math.max(0, sessions.length - 1));
       const selected = sessions[selectedIndex];
+      const notice = filterMode
+        ? `Filter /${filter}  Enter accept, Esc clear`
+        : pendingKillName
+          ? `Press x again to kill ${pendingKillName}; Esc cancels.`
+          : message;
 
       screen.draw(formatDashboard({
         view,
@@ -93,7 +96,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         selected,
         filter,
         config: context.config,
-        message
+        message: notice
       }));
       message = undefined;
 
@@ -106,64 +109,101 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
       const name = key.name;
       const sequence = key.sequence;
 
+      if (filterMode) {
+        pendingKillName = undefined;
+        if (key.ctrl && name === "c") {
+          return;
+        }
+        if (name === "return" || name === "enter") {
+          filterMode = false;
+          selectedIndex = 0;
+          continue;
+        }
+        if (name === "escape") {
+          filter = "";
+          filterMode = false;
+          selectedIndex = 0;
+          continue;
+        }
+        if (name === "backspace" || name === "delete") {
+          filter = filter.slice(0, -1);
+          selectedIndex = 0;
+          continue;
+        }
+        if (sequence && sequence.length === 1 && sequence >= " ") {
+          filter += sequence;
+          selectedIndex = 0;
+        }
+        continue;
+      }
+
       if (key.ctrl && name === "c") {
         return;
       }
       if (name === "q" || sequence === "q") {
         return;
       }
+      if (name === "escape") {
+        filter = "";
+        pendingKillName = undefined;
+        continue;
+      }
       if (name === "up" || sequence === "k") {
+        pendingKillName = undefined;
         selectedIndex = Math.max(0, selectedIndex - 1);
         continue;
       }
       if (name === "down" || sequence === "j") {
+        pendingKillName = undefined;
         selectedIndex = Math.min(Math.max(0, sessions.length - 1), selectedIndex + 1);
         continue;
       }
       if (sequence === "g") {
+        pendingKillName = undefined;
         selectedIndex = 0;
         continue;
       }
       if (sequence === "G") {
+        pendingKillName = undefined;
         selectedIndex = Math.max(0, sessions.length - 1);
         continue;
       }
-      if (name === "escape") {
-        filter = "";
-        continue;
-      }
       if (sequence === "r") {
+        pendingKillName = undefined;
         view = "recent";
         selectedIndex = 0;
         continue;
       }
       if (sequence === "p") {
+        pendingKillName = undefined;
         view = "path";
         selectedIndex = 0;
         continue;
       }
       if (sequence === "a") {
+        pendingKillName = undefined;
         view = "kind";
         selectedIndex = 0;
         continue;
       }
       if (sequence === "w") {
+        pendingKillName = undefined;
         view = "waiting";
         selectedIndex = 0;
         continue;
       }
       if (sequence === "?") {
+        pendingKillName = undefined;
         await showOverlay(screen, formatDashboardHelp);
         continue;
       }
       if (sequence === "/") {
-        screen.suspend();
-        filter = await ask("Filter", filter);
-        selectedIndex = 0;
-        screen.resume();
+        pendingKillName = undefined;
+        filterMode = true;
         continue;
       }
       if (sequence === "n") {
+        pendingKillName = undefined;
         const result = await runNewSessionForm(screen, context);
         if (!result) {
           message = "New session cancelled.";
@@ -185,6 +225,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         if (/^[1-9]$/.test(sequence ?? "")) {
           const quickIndex = Number(sequence) - 1;
           if (quickIndex < sessions.length) {
+            pendingKillName = undefined;
             selectedIndex = quickIndex;
           }
           continue;
@@ -195,6 +236,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
             message = "No session selected.";
             continue;
           }
+          pendingKillName = undefined;
           await leaveForTmux(screen, async () => {
             await attachCommand(context, selected.name);
           });
@@ -210,35 +252,26 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         }
 
         if (sequence === "s") {
+          pendingKillName = undefined;
           await showOverlay(screen, () => formatStatus(target));
           continue;
         }
-        if (sequence === "m") {
-          screen.suspend();
-          const message = await ask("Message");
-          if (message && (await confirm(`Send to ${target.name}?`, false))) {
-            sendCommandToSession(context, target.name, message, { allowShell: false });
-            await ask("Press Enter");
-          }
-          screen.resume();
-          continue;
-        }
         if (sequence === "x") {
-          screen.suspend();
-          if (await confirm(`Kill ${target.name}?`, false)) {
-            killCommand(context, target.name);
-            await ask("Press Enter");
+          if (pendingKillName === target.name) {
+            killCommand(context, target.name, { quiet: true });
+            refreshContextState(context);
+            message = `Killed ${target.name}.`;
+            pendingKillName = undefined;
+          } else {
+            pendingKillName = target.name;
           }
-          screen.resume();
           continue;
         }
 
+        pendingKillName = undefined;
         message = `Unknown key ${sequence ?? name ?? ""}. Press ? for help.`;
       } catch (error) {
-        screen.suspend();
-        console.error(style.red((error as Error).message));
-        await ask("Press Enter");
-        screen.resume();
+        message = style.red((error as Error).message);
       }
     }
   } finally {

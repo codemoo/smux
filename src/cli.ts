@@ -7,14 +7,11 @@ import { listCommand } from "./commands/list.js";
 import { newCommand } from "./commands/new.js";
 import { noteCommand } from "./commands/note.js";
 import { renameCommand } from "./commands/rename.js";
-import { sendCommandToSession } from "./commands/send.js";
 import { statusCommand } from "./commands/status.js";
-import { tagCommand } from "./commands/tag.js";
 import { applyTmuxOptions, ensureTmuxAvailable } from "./core/tmux.js";
 import { formatHelp } from "./core/format.js";
 import { activeSessions } from "./core/resolve.js";
 import type { ListView, SessionKind, TmuxOptions } from "./core/types.js";
-import { confirm } from "./tui/prompt.js";
 import { runMainMenu } from "./tui/main-menu.js";
 
 interface ParsedArgs {
@@ -135,18 +132,11 @@ async function main(): Promise<void> {
       return;
 
     case "new": {
-      const tags = parsed.positional
-        .slice(1)
-        .filter((item) => item !== "new");
-      const flagTag = flagString(parsed.flags, "tag");
       await newCommand(context, {
         name: flagString(parsed.flags, "name"),
         kind: parseKind(flagString(parsed.flags, "kind")),
         cwd: flagString(parsed.flags, "cwd"),
-        objective: flagString(parsed.flags, "objective"),
-        tags: flagTag ? [...tags, flagTag] : tags,
         attach: !flagBoolean(parsed.flags, "no-attach"),
-        sendObjective: flagBoolean(parsed.flags, "send-objective"),
         resume: flagBoolean(parsed.flags, "resume"),
         tmux: parseTmuxFlags(parsed.flags)
       });
@@ -167,34 +157,11 @@ async function main(): Promise<void> {
       statusCommand(context, rest[0]);
       return;
 
-    case "send": {
-      if (!rest[0] || rest.length < 2) {
-        throw new Error("send requires a session name/id and a message.");
-      }
-      const [target, ...messageParts] = rest;
-      const message = messageParts.join(" ");
-      if (!flagBoolean(parsed.flags, "yes") && !(await confirm(`Send to ${target}?`, false))) {
-        return;
-      }
-      sendCommandToSession(context, target!, message, {
-        yes: flagBoolean(parsed.flags, "yes"),
-        allowShell: flagBoolean(parsed.flags, "allow-shell")
-      });
-      return;
-    }
-
     case "note":
       if (!rest[0] || rest.length < 2) {
         throw new Error("note requires a session name/id and text.");
       }
       noteCommand(context, rest[0], rest.slice(1).join(" "));
-      return;
-
-    case "tag":
-      if (!rest[0] || rest.length < 2) {
-        throw new Error("tag requires a session name/id and one or more tags.");
-      }
-      tagCommand(context, rest[0], rest.slice(1));
       return;
 
     case "rename":
@@ -229,9 +196,6 @@ async function main(): Promise<void> {
       if (!rest[0]) {
         throw new Error("kill requires a session name or id.");
       }
-      if (!flagBoolean(parsed.flags, "yes") && !(await confirm(`Kill ${rest[0]}?`, false))) {
-        return;
-      }
       killCommand(context, rest[0]);
       return;
 
@@ -241,8 +205,8 @@ async function main(): Promise<void> {
         console.log("No active sessions to kill.");
         return;
       }
-      if (!flagBoolean(parsed.flags, "yes") && !(await confirm(`Kill all ${count} active sessions?`, false))) {
-        return;
+      if (!flagBoolean(parsed.flags, "yes")) {
+        throw new Error("killall requires --yes.");
       }
       killAllCommand(context);
       return;

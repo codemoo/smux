@@ -62,20 +62,24 @@ function normalizeSession(value: unknown): SmuxSession | undefined {
   }
 
   return {
-    ...session,
     id,
     name,
     kind,
-    objective: session.objective ?? "",
-    tags: Array.isArray(session.tags) ? session.tags.filter((tag): tag is string => typeof tag === "string") : [],
     resume: session.resume ?? false,
     agentStatus: agentStatus(session.agentStatus),
     cwd,
+    repoRoot: stringValue(session.repoRoot),
+    gitBranch: stringValue(session.gitBranch),
+    gitDirty: session.gitDirty,
+    tmuxSessionId: stringValue(session.tmuxSessionId),
     tmuxSessionName,
+    tmux: session.tmux,
     status: sessionStatus(session.status),
+    lastPreview: stringValue(session.lastPreview),
     notes: Array.isArray(session.notes) ? session.notes : [],
     createdAt,
-    updatedAt
+    updatedAt,
+    lastAttachedAt: stringValue(session.lastAttachedAt)
   };
 }
 

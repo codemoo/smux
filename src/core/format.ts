@@ -23,11 +23,8 @@ interface NewSessionFormState {
   step: number;
   name: string;
   cwd: string;
-  objective: string;
   kind: "claude" | "codex" | "shell";
-  tags: string;
   resume: boolean;
-  sendObjective: boolean;
 }
 
 function shortenPath(path: string): string {
@@ -323,8 +320,7 @@ function dashboardSessionRows(options: {
     const metaParts = [
       mutedLabel("cwd", style.dim(shortenPath(session.cwd))),
       startupBadge(session),
-      session.gitBranch ? mutedLabel("git", gitLabel(session.gitBranch, session.gitDirty)) : undefined,
-      session.objective ? mutedLabel("task", style.dim(session.objective)) : undefined
+      session.gitBranch ? mutedLabel("git", gitLabel(session.gitBranch, session.gitDirty)) : undefined
     ].filter(Boolean);
     const branch = selected ? style.cyan("└") : style.gray("└");
     const meta = `  ${branch} ${truncate(metaParts.join(style.gray("  ·  ")), options.width - 4)}`;
@@ -361,7 +357,6 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
   const notes = session.notes.length
     ? session.notes.slice(-3).map((note) => `  ${style.gray("-")} ${truncate(note.text, width - 8)}`)
     : [`  ${style.gray("-")}`];
-  const tags = session.tags.length ? session.tags.map((tag) => style.cyan(`#${tag}`)).join(" ") : style.gray("-");
   const scroll = [
     `history ${session.tmux?.historyLimit ?? "global"}`,
     `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`
@@ -380,10 +375,6 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     field("git", session.gitBranch ? `${gitLabel(session.gitBranch, session.gitDirty)}${session.gitDirty ? style.gray(" dirty") : ""}` : style.gray("-")),
     field("startup", startupLabel(session)),
     field("scroll", scroll),
-    field("tags", tags),
-    "",
-    sectionTitle("objective"),
-    `  ${session.objective ? truncate(session.objective, width - 6) : style.gray("no objective")}`,
     "",
     sectionTitle("preview"),
     ...preview,
@@ -395,7 +386,7 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
 
 function commandBar(width: number): string {
   const left = `${key("↑/↓")} move  ${key("enter")} attach  ${key("n")} new  ${key("/")} filter`;
-  const right = `${key("s")} status  ${key("m")} send  ${key("x")} kill  ${key("q")} quit`;
+  const right = `${key("s")} status  ${key("x")} kill  ${key("q")} quit`;
   if (visibleLength(left) + visibleLength(right) + 4 > width) {
     return fillLine(`${key("enter")} attach  ${key("n")} new  ${key("/")} filter  ${key("?")} help  ${key("q")} quit`, width);
   }
@@ -511,11 +502,10 @@ export function formatDashboardHelp(): string {
     `${key("↑/↓")} or ${key("j/k")} move selection`,
     `${key("enter")} attach to selected tmux session`,
     `${key("n")} create a new session`,
-    `${key("/")} filter by name, path, objective, tag, kind, branch, or state`,
+    `${key("/")} filter by name, path, kind, branch, or state`,
     `${key("r")} recent view   ${key("p")} path view   ${key("a")} agent view   ${key("w")} waiting view`,
     `${key("s")} inspect selected session without attaching`,
-    `${key("m")} send a prompt to selected agent`,
-    `${key("x")} kill selected session after confirmation`,
+    `${key("x")} press twice to kill selected session`,
     `${key("esc")} clear filter   ${key("q")} quit`
   ], terminalWidth(), Math.max(6, terminalHeight() - 1)).join("\n");
 }
@@ -575,10 +565,10 @@ function formStepLine(step: number): string {
     .join(style.gray("  "));
 }
 
-const formSteps = ["name", "cwd", "agent", "resume", "objective", "tags", "start"] as const;
+const formSteps = ["name", "cwd", "agent", "resume"] as const;
 
 function formStepTitle(step: number): string {
-  return `${style.bold("Create session")} ${style.gray(`step ${step + 1}/${formSteps.length}`)}`;
+  return `${style.bold("Launch session")} ${style.gray(`step ${step + 1}/${formSteps.length}`)}`;
 }
 
 function startupPreview(state: NewSessionFormState): string {
@@ -640,30 +630,16 @@ export function formatNewSessionForm(options: {
       ? "starts claude -r"
       : "agent sessions only";
   const resumeLine = checkboxLine("resume previous", state.resume, state.step === 3, canResume, resumeHint);
-  const canSendObjective = state.kind !== "shell" && !state.resume && state.objective.trim().length > 0;
-  const sendValue = !canSendObjective
-    ? style.gray("disabled")
-    : state.sendObjective
-      ? style.green("send objective")
-      : style.gray("do not send");
-  const sendHint = state.resume
-    ? "disabled while resume is on"
-    : canSendObjective
-      ? "space toggles"
-      : "requires agent objective";
-  const sendLine = `${state.step === 6 ? style.cyan("›") : " "} ${padEndVisible("initial prompt", 18)} ${sendValue} ${style.dim(sendHint)}`;
   const fieldRows = [
     inputLine("name", state.name, state.step === 0, "editable"),
     inputLine("cwd", state.cwd, state.step === 1, options.cwdSuggestion ? "tab completes" : "editable path", options.cwdSuggestion),
     kindLine,
-    resumeLine,
-    inputLine("objective", state.objective, state.step === 4, "optional"),
-    inputLine("tags", state.tags, state.step === 5, "comma separated"),
-    sendLine
+    resumeLine
   ];
   const body = [
     formStepTitle(state.step),
     formStepLine(state.step),
+    "",
     field("launch", displayPath(state.cwd || options.cwd)),
     field("startup", startupPreview(state)),
     "",
@@ -675,8 +651,10 @@ export function formatNewSessionForm(options: {
   const visibleBody = fitFormBody(body, fieldRows, state, options.cwd, boxHeight - 2);
   const rows = boxLines("new session", visibleBody, formWidth, boxHeight).map((line) => `${spacer}${line}`);
   const footerText = width < 64
-    ? " enter next   tab complete   esc cancel"
-    : " enter next/confirm   tab complete/move   ↑/↓ move   ←/→ agent   space toggle   esc cancel";
+    ? " enter launch   tab complete   esc cancel"
+    : width < 96
+      ? " enter launch   tab complete   ↑/↓ move   c/l/s agent   esc cancel"
+      : " enter launch   tab complete/move   ↑/↓ move   ←/→ agent   space resume   esc cancel";
   const footer = style.inverse(fillLine(footerText, width));
 
   return [header, "", ...rows, "", footer].join("\n");
@@ -686,7 +664,6 @@ export function formatStatus(session: SmuxSession): string {
   const git = session.gitBranch
     ? `${gitLabel(session.gitBranch, session.gitDirty)} ${style.gray(session.gitDirty ? "dirty" : "clean")}`
     : style.gray("-");
-  const tags = session.tags.length > 0 ? session.tags.map((tag) => style.cyan(`#${tag}`)).join(" ") : style.gray("-");
   const tmux = [
     `history ${session.tmux?.historyLimit ?? "global"}`,
     `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`,
@@ -707,8 +684,6 @@ export function formatStatus(session: SmuxSession): string {
     field("tmux", session.status),
     field("startup", startupLabel(session)),
     field("scroll", tmux),
-    field("objective", session.objective || style.gray("-")),
-    field("tags", tags),
     "",
     sectionTitle("last preview"),
     preview,
@@ -727,18 +702,16 @@ export function formatHelp(): string {
     `  ${style.bold("smux")}                                      ${style.dim("open the session dashboard")}`,
     `  ${style.bold("smux list")} [--view recent|path|kind|waiting] ${style.dim("show sessions")}`,
     `  ${style.bold("smux new")} [--kind codex|claude|shell]       ${style.dim("create a session")}`,
-    `            [--name NAME] [--cwd DIR] [--objective TEXT] [--resume]`,
-    `            [--send-objective]`,
+    `            [--name NAME] [--cwd DIR] [--resume]`,
     `            [--history-limit N] [--mouse|--no-mouse]`,
     `  ${style.bold("smux attach")} <name-or-id>                   ${style.dim("attach to tmux")}`,
     `  ${style.bold("smux status")} <name-or-id>                   ${style.dim("inspect without attaching")}`,
-    `  ${style.bold("smux send")} <name-or-id> <message>           ${style.dim("send a confirmed prompt")}`,
     `  ${style.bold("smux rename")} <new-name> [name-or-id]        ${style.dim("sync smux and tmux names")}`,
     `  ${style.bold("smux config")}                                ${style.dim("show global settings")}`,
     `  ${style.bold("smux config set")} <key> <value>              ${style.dim("set global defaults")}`,
     `  ${style.bold("smux set")} <session> <key> <value>           ${style.dim("set a session override")}`,
     `  ${style.bold("smux kill")} <name-or-id>                     ${style.dim("terminate a session")}`,
-    `  ${style.bold("smux killall")} [--yes]                        ${style.dim("terminate all active sessions")}`,
+    `  ${style.bold("smux killall --yes")}                           ${style.dim("terminate all active sessions")}`,
     "",
     sectionTitle("views"),
     `  ${key("r")} recent   ${key("p")} path   ${key("a")} agent   ${key("w")} waiting`,

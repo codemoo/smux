@@ -3,7 +3,7 @@ import { activeSessions, resolveSession, tmuxTarget } from "../core/resolve.js";
 import { upsertSession } from "../core/store.js";
 import type { CommandContext } from "./context.js";
 
-export function killCommand(context: CommandContext, query: string): void {
+export function killCommand(context: CommandContext, query: string, options: { quiet?: boolean } = {}): void {
   const session = resolveSession(context.state, query);
   killTmuxSession(tmuxTarget(session));
   const now = new Date().toISOString();
@@ -15,7 +15,9 @@ export function killCommand(context: CommandContext, query: string): void {
       updatedAt: now
     })
   );
-  console.log(`Killed ${session.name}.`);
+  if (!options.quiet) {
+    console.log(`Killed ${session.name}.`);
+  }
 }
 
 export function killAllCommand(context: CommandContext): void {
