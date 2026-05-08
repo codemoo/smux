@@ -10,8 +10,25 @@ export interface CommandContext {
   saveConfig(config: SmuxConfig): void;
 }
 
+function sameState(left: SmuxState, right: SmuxState): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function refreshContextState(context: CommandContext): void {
+  const nextState = reconcile(context.state);
+  if (sameState(context.state, nextState)) {
+    context.state = nextState;
+    return;
+  }
+  context.save(nextState);
+}
+
 export function loadContext(): CommandContext {
-  const state = reconcile(loadState());
+  const loadedState = loadState();
+  const state = reconcile(loadedState);
+  if (!sameState(loadedState, state)) {
+    saveState(state);
+  }
   const config = loadConfig();
   const context: CommandContext = {
     state,

@@ -52,9 +52,10 @@ export function reconcile(state: SmuxState): SmuxState {
 
   const knownTmuxIds = new Set<string>();
   const sessions = state.sessions.map((session) => {
-    const tmux = session.tmuxSessionId
-      ? byId.get(session.tmuxSessionId)
-      : byName.get(session.tmuxSessionName);
+    const tmux =
+      (session.tmuxSessionId ? byId.get(session.tmuxSessionId) : undefined) ??
+      byName.get(session.tmuxSessionName) ??
+      byName.get(session.name);
 
     if (tmux) {
       knownTmuxIds.add(tmux.id);

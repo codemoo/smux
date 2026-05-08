@@ -4,13 +4,12 @@ import { newCommand } from "../commands/new.js";
 import { sendCommandToSession } from "../commands/send.js";
 import { activeSessions } from "../core/resolve.js";
 import { formatDashboard, formatDashboardHelp, formatStatus, sortRecent } from "../core/format.js";
-import type { CommandContext } from "../commands/context.js";
+import { refreshContextState, type CommandContext } from "../commands/context.js";
 import type { ListView, SmuxSession } from "../core/types.js";
 import { ask, confirm } from "./prompt.js";
 import { FullScreen, readInput } from "./screen.js";
 import { fillLine, style, terminalWidth } from "../core/theme.js";
 import { runNewSessionForm } from "./form.js";
-import { reconcile } from "../core/reconcile.js";
 
 function matchesFilter(session: SmuxSession, filter: string): boolean {
   if (!filter) {
@@ -81,7 +80,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
 
   try {
     for (;;) {
-      context.state = reconcile(context.state);
+      refreshContextState(context);
       const allSessions = sortRecent(activeSessions(context.state));
       const sessions = visibleSessions(allSessions, view, filter);
       selectedIndex = Math.min(Math.max(selectedIndex, 0), Math.max(0, sessions.length - 1));
@@ -174,7 +173,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
           await leaveForTmux(screen, async () => {
             await newCommand(context, result);
           });
-          context.state = reconcile(context.state);
+          refreshContextState(context);
           message = "Detached. Back in smux.";
         } catch (error) {
           message = (error as Error).message;
@@ -199,7 +198,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
           await leaveForTmux(screen, async () => {
             await attachCommand(context, selected.name);
           });
-          context.state = reconcile(context.state);
+          refreshContextState(context);
           message = "Detached. Back in smux.";
           continue;
         }
