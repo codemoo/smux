@@ -5,7 +5,6 @@ import { loadContext } from "./commands/context.js";
 import { killAllCommand, killCommand } from "./commands/kill.js";
 import { listCommand } from "./commands/list.js";
 import { newCommand } from "./commands/new.js";
-import { noteCommand } from "./commands/note.js";
 import { renameCommand } from "./commands/rename.js";
 import { statusCommand } from "./commands/status.js";
 import { applyTmuxOptions, ensureTmuxAvailable } from "./core/tmux.js";
@@ -155,13 +154,6 @@ async function main(): Promise<void> {
         throw new Error("status requires a session name or id.");
       }
       statusCommand(context, rest[0]);
-      return;
-
-    case "note":
-      if (!rest[0] || rest.length < 2) {
-        throw new Error("note requires a session name/id and text.");
-      }
-      noteCommand(context, rest[0], rest.slice(1).join(" "));
       return;
 
     case "rename":

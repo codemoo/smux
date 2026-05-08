@@ -8,11 +8,6 @@ export type AgentStatus =
   | "done"
   | "unknown";
 
-export interface SmuxNote {
-  text: string;
-  createdAt: string;
-}
-
 export interface TmuxOptions {
   historyLimit?: number;
   mouse?: boolean;
@@ -40,7 +35,6 @@ export interface SmuxSession {
   tmux?: TmuxOptions;
   status: "attached" | "detached" | "missing" | "terminated";
   lastPreview?: string;
-  notes: SmuxNote[];
   createdAt: string;
   updatedAt: string;
   lastAttachedAt?: string;

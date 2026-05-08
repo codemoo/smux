@@ -30,11 +30,23 @@ function uniqueName(base: string, existingNames: Set<string>): string {
   throw new Error(`Could not create a unique session name from "${base}".`);
 }
 
+function defaultName(cwd: string): string {
+  return basename(cwd) || "session";
+}
+
+function requestedName(value: string | undefined, cwd: string): string {
+  const name = value?.trim() || defaultName(cwd);
+  if (/[:\r\n]/.test(name)) {
+    throw new Error("Session name cannot contain ':', newlines, or carriage returns.");
+  }
+  return name;
+}
+
 export async function newCommand(context: CommandContext, options: NewSessionOptions): Promise<SmuxSession> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const kind = options.kind ?? "shell";
   const existingNames = new Set(activeSessions(context.state).map((session) => session.tmuxSessionName));
-  const name = uniqueName(options.name ?? basename(cwd), existingNames);
+  const name = uniqueName(requestedName(options.name, cwd), existingNames);
   const id = createSessionId();
   const now = new Date().toISOString();
   const git = gitInfo(cwd);
@@ -64,7 +76,6 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
     tmuxSessionName: name,
     tmux: options.tmux,
     status: "detached",
-    notes: [],
     createdAt: now,
     updatedAt: now
   };
@@ -79,13 +90,6 @@ export async function newCommand(context: CommandContext, options: NewSessionOpt
       session = {
         ...session,
         agentStatus: "blocked",
-        notes: [
-          ...session.notes,
-          {
-            text: `Startup command failed: ${(error as Error).message}`,
-            createdAt: failedAt
-          }
-        ],
         updatedAt: failedAt
       };
       context.save(upsertSession(context.state, session));

@@ -271,6 +271,7 @@ export async function runMainMenu(context: CommandContext): Promise<void> {
         pendingKillName = undefined;
         message = `Unknown key ${sequence ?? name ?? ""}. Press ? for help.`;
       } catch (error) {
+        pendingKillName = undefined;
         message = style.red((error as Error).message);
       }
     }

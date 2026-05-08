@@ -99,7 +99,6 @@ export function reconcile(state: SmuxState): SmuxState {
       tmuxSessionName: tmux.name,
       status: tmux.attached ? "attached" : "detached",
       lastPreview: capturePreview(tmux.id),
-      notes: [],
       createdAt: isoFromEpoch(tmux.createdAtEpoch) ?? now,
       updatedAt: now,
       lastAttachedAt: isoFromEpoch(tmux.lastAttachedAtEpoch)

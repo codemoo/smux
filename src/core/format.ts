@@ -137,10 +137,6 @@ function emptyList(filter?: string): string {
   return box(style.cyan("smux"), [
     style.bold(filter ? "No matching sessions" : "No active tmux sessions"),
     "",
-    `${key("n")} create a session from this directory`,
-    `${key("/")} ${filter ? "clear or change filter" : "filter sessions"}`,
-    `${key("q")} quit`,
-    "",
     style.dim("Try: smux new --kind codex --name work")
   ]);
 }
@@ -158,7 +154,10 @@ function emptyPanel(filter: string): string[] {
 }
 
 export function formatList(sessions: SmuxSession[], view: ListView, selectedId?: string, filter?: string): string {
-  const active = sortRecent(sessions);
+  const scoped = view === "waiting"
+    ? sessions.filter((session) => session.agentStatus === "waiting" || session.agentStatus === "blocked")
+    : sessions;
+  const active = sortRecent(scoped);
   if (active.length === 0) {
     return emptyList(filter);
   }
@@ -354,9 +353,6 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
         .slice(-7)
         .map((line) => `  ${style.dim(truncate(line, width - 8))}`)
     : [`  ${style.gray("-")}`];
-  const notes = session.notes.length
-    ? session.notes.slice(-3).map((note) => `  ${style.gray("-")} ${truncate(note.text, width - 8)}`)
-    : [`  ${style.gray("-")}`];
   const scroll = [
     `history ${session.tmux?.historyLimit ?? "global"}`,
     `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`
@@ -377,10 +373,7 @@ function detailRows(session: SmuxSession | undefined, width: number): string[] {
     field("scroll", scroll),
     "",
     sectionTitle("preview"),
-    ...preview,
-    "",
-    sectionTitle("notes"),
-    ...notes
+    ...preview
   ];
 }
 
@@ -669,7 +662,6 @@ export function formatStatus(session: SmuxSession): string {
     `mouse ${session.tmux?.mouse === undefined ? "global" : session.tmux.mouse ? "on" : "off"}`,
     `keys ${session.tmux?.modeKeys ?? "global"}`
   ].join(", ");
-  const notes = session.notes.slice(-5).map((note) => `  ${style.gray("-")} ${note.text}`).join("\n") || `  ${style.gray("-")}`;
   const preview = session.lastPreview
     ? session.lastPreview
         .split("\n")
@@ -686,10 +678,7 @@ export function formatStatus(session: SmuxSession): string {
     field("scroll", tmux),
     "",
     sectionTitle("last preview"),
-    preview,
-    "",
-    sectionTitle("notes"),
-    notes
+    preview
   ], terminalWidth(), Math.max(8, terminalHeight() - 1)).join("\n");
 }
 

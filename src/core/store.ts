@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { AgentStatus, SessionKind, SmuxSession, SmuxState } from "./types.js";
+import type { AgentStatus, SessionKind, SmuxSession, SmuxState, TmuxOptions } from "./types.js";
 
 const CURRENT_VERSION = 1;
 
@@ -45,6 +45,28 @@ function sessionStatus(value: unknown): SmuxSession["status"] {
   return "missing";
 }
 
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function tmuxOptions(value: unknown): TmuxOptions | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Partial<TmuxOptions>;
+  const options: TmuxOptions = {};
+  if (typeof raw.historyLimit === "number" && Number.isInteger(raw.historyLimit) && raw.historyLimit >= 2_000) {
+    options.historyLimit = raw.historyLimit;
+  }
+  if (typeof raw.mouse === "boolean") {
+    options.mouse = raw.mouse;
+  }
+  if (raw.modeKeys === "vi" || raw.modeKeys === "emacs") {
+    options.modeKeys = raw.modeKeys;
+  }
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
 function normalizeSession(value: unknown): SmuxSession | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -70,13 +92,12 @@ function normalizeSession(value: unknown): SmuxSession | undefined {
     cwd,
     repoRoot: stringValue(session.repoRoot),
     gitBranch: stringValue(session.gitBranch),
-    gitDirty: session.gitDirty,
+    gitDirty: booleanValue(session.gitDirty),
     tmuxSessionId: stringValue(session.tmuxSessionId),
     tmuxSessionName,
-    tmux: session.tmux,
+    tmux: tmuxOptions(session.tmux),
     status: sessionStatus(session.status),
     lastPreview: stringValue(session.lastPreview),
-    notes: Array.isArray(session.notes) ? session.notes : [],
     createdAt,
     updatedAt,
     lastAttachedAt: stringValue(session.lastAttachedAt)

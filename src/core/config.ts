@@ -21,17 +21,29 @@ export function defaultConfig(): SmuxConfig {
   };
 }
 
+function booleanConfig(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function historyLimitConfig(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 2_000 ? value : fallback;
+}
+
+function modeKeysConfig(value: unknown, fallback: "vi" | "emacs"): "vi" | "emacs" {
+  return value === "vi" || value === "emacs" ? value : fallback;
+}
+
 export function loadConfig(path = configFilePath()): SmuxConfig {
   const defaults = defaultConfig();
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<SmuxConfig>;
     return {
       version: CURRENT_VERSION,
-      fullscreen: parsed.fullscreen ?? defaults.fullscreen,
+      fullscreen: booleanConfig(parsed.fullscreen, defaults.fullscreen),
       tmux: {
-        historyLimit: parsed.tmux?.historyLimit ?? defaults.tmux.historyLimit,
-        mouse: parsed.tmux?.mouse ?? defaults.tmux.mouse,
-        modeKeys: parsed.tmux?.modeKeys ?? defaults.tmux.modeKeys
+        historyLimit: historyLimitConfig(parsed.tmux?.historyLimit, defaults.tmux.historyLimit),
+        mouse: booleanConfig(parsed.tmux?.mouse, defaults.tmux.mouse),
+        modeKeys: modeKeysConfig(parsed.tmux?.modeKeys, defaults.tmux.modeKeys)
       }
     };
   } catch (error) {
@@ -83,4 +95,3 @@ export function parseConfigValue(key: string, value: string): string | number | 
   }
   throw new Error(`Unknown config key "${key}".`);
 }
-

@@ -29,6 +29,10 @@ const STEP_RESUME = 3;
 const fieldCount = 4;
 const kinds: SessionKind[] = ["codex", "claude", "shell"];
 
+function defaultName(cwd: string): string {
+  return basename(cwd) || "session";
+}
+
 function currentValue(state: FormState): string {
   if (state.step === STEP_NAME) {
     return state.name;
@@ -144,7 +148,7 @@ function formResult(state: FormState): NewSessionFormResult {
   const cwd = resolveCwd(state.cwd);
   const resume = state.kind !== "shell" && state.resume;
   return {
-    name: state.name.trim() || basename(cwd),
+    name: state.name.trim() || defaultName(cwd),
     cwd,
     kind: state.kind,
     resume
@@ -157,7 +161,7 @@ export async function runNewSessionForm(
 ): Promise<NewSessionFormResult | undefined> {
   let state: FormState = {
     step: 0,
-    name: basename(process.cwd()),
+    name: defaultName(process.cwd()),
     cwd: process.cwd(),
     kind: "codex",
     resume: false
